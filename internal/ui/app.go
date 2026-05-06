@@ -418,7 +418,11 @@ func (a App) View() string {
 			body = a.lambdas.View()
 		}
 	case ModeDynamo:
-		body = placeholder("DynamoDB", "M3: list, describe, scan, query, PartiQL, item view, export — coming soon")
+		if a.tableDescribe != nil {
+			body = a.tableDescribe.View()
+		} else {
+			body = a.tables.View()
+		}
 	}
 
 	w, h := a.contentSize()
