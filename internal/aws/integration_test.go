@@ -254,6 +254,15 @@ func TestLogsFilter(t *testing.T) {
 	if len(page.Events) != 0 {
 		t.Fatalf("expected empty events, got %d", len(page.Events))
 	}
+
+	// FilterPattern path: empty group still returns 0 events without erroring.
+	page, err = lc.Filter(ctx, FilterInput{LogGroup: group, Limit: 10, FilterPattern: "ERROR"})
+	if err != nil {
+		t.Fatalf("Filter with pattern: %v", err)
+	}
+	if len(page.Events) != 0 {
+		t.Fatalf("expected empty events with pattern, got %d", len(page.Events))
+	}
 }
 
 // ---------- helpers ----------

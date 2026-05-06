@@ -31,10 +31,11 @@ func LambdaLogGroup(functionName string) string {
 
 // FilterInput drives a single FilterLogEvents call.
 type FilterInput struct {
-	LogGroup    string
-	StartMillis int64 // unix ms; events at or after
-	NextToken   string
-	Limit       int32
+	LogGroup      string
+	StartMillis   int64 // unix ms; events at or after
+	NextToken     string
+	Limit         int32
+	FilterPattern string // CloudWatch filter pattern; empty = no filter
 }
 
 // LogEvent is a normalized log line.
@@ -62,6 +63,9 @@ func (c *LogsClient) Filter(ctx context.Context, in FilterInput) (*FilterPage, e
 	}
 	if in.Limit > 0 {
 		req.Limit = &in.Limit
+	}
+	if in.FilterPattern != "" {
+		req.FilterPattern = &in.FilterPattern
 	}
 	resp, err := c.api.FilterLogEvents(ctx, req)
 	if err != nil {

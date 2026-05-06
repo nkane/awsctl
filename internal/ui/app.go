@@ -42,6 +42,7 @@ type App struct {
 	lambdas      lambdaui.ListModel
 	lambdaDetail *lambdaui.DetailModel // nil unless a function is being viewed
 	lambdaInvoke *lambdaui.InvokeModel // nil unless invoke screen is open
+	lambdaLogs   *lambdaui.LogsModel   // nil unless log tail is open
 
 	width  int
 	height int
@@ -132,6 +133,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.lambdaInvoke != nil {
 			a.lambdaInvoke.SetSize(w, h)
 		}
+		if a.lambdaLogs != nil {
+			a.lambdaLogs.SetSize(w, h)
+		}
 		// Only forward to picker if it has been constructed (mode==Profile).
 		if a.mode == ModeProfile {
 			var cmd tea.Cmd
@@ -168,6 +172,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.mode == ModeProfile {
 			var cmd tea.Cmd
 			a.picker, cmd = a.picker.Update(msg)
+			return a, cmd
+		}
+		// Lambda logs owns input when open.
+		if a.mode == ModeLambda && a.lambdaLogs != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				a.quitting = true
+				return a, tea.Quit
+			case "esc":
+				// If filter input is active, let logs model handle esc.
+				if !a.lambdaLogs.FilterFocused() {
+					a.lambdaLogs = nil
+					return a, nil
+				}
+			}
+			lg, cmd := a.lambdaLogs.Update(msg)
+			a.lambdaLogs = &lg
 			return a, cmd
 		}
 		// Lambda invoke owns input when open.
@@ -208,6 +229,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					w, h := a.contentSize()
 					inv.SetSize(w, h)
 					a.lambdaInvoke = &inv
+				}
+				return a, nil
+			case msg.String() == "l":
+				name := a.lambdaDetail.Name()
+				if name != "" && a.cfg != nil {
+					lg := lambdaui.NewLogs(awsx.NewLogsClient(a.cfg), name)
+					w, h := a.contentSize()
+					lg.SetSize(w, h)
+					a.lambdaLogs = &lg
+					return a, lg.Init()
 				}
 				return a, nil
 			case keyMatches(msg, a.keys.Dynamo):
@@ -263,6 +294,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			inv.SetSize(w, h)
 			a.lambdaInvoke = &inv
 			return a, nil
+		case msg.String() == "l" && a.mode == ModeLambda && !a.lambdas.IsFiltering():
+			sel := a.lambdas.Selected()
+			if sel.Name == "" || a.cfg == nil {
+				return a, nil
+			}
+			lg := lambdaui.NewLogs(awsx.NewLogsClient(a.cfg), sel.Name)
+			w, h := a.contentSize()
+			lg.SetSize(w, h)
+			a.lambdaLogs = &lg
+			return a, lg.Init()
 		}
 		// Forward unhandled keys to the active screen.
 		if a.mode == ModeLambda {
@@ -275,7 +316,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Forward non-key messages (spinner ticks, loadedMsg, detailLoadedMsg) to
 	// both the list and detail screens so background loads complete regardless
 	// of which is currently visible.
-	var cmd1, cmd2, cmd3 tea.Cmd
+	var cmd1, cmd2, cmd3, cmd4 tea.Cmd
 	a.lambdas, cmd1 = a.lambdas.Update(msg)
 	if a.lambdaDetail != nil {
 		d, c := a.lambdaDetail.Update(msg)
@@ -287,7 +328,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lambdaInvoke = &inv
 		cmd3 = c
 	}
-	return a, tea.Batch(cmd1, cmd2, cmd3)
+	if a.lambdaLogs != nil {
+		lg, c := a.lambdaLogs.Update(msg)
+		a.lambdaLogs = &lg
+		cmd4 = c
+	}
+	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4)
 }
 
 // View implements tea.Model.
@@ -303,7 +349,9 @@ func (a App) View() string {
 	body := ""
 	switch a.mode {
 	case ModeLambda:
-		if a.lambdaInvoke != nil {
+		if a.lambdaLogs != nil {
+			body = a.lambdaLogs.View()
+		} else if a.lambdaInvoke != nil {
 			body = a.lambdaInvoke.View()
 		} else if a.lambdaDetail != nil {
 			body = a.lambdaDetail.View()
