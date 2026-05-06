@@ -47,6 +47,7 @@ type App struct {
 
 	tables       dynamoui.ListModel
 	tableDescribe *dynamoui.DescribeModel // nil unless describe is open
+	tableScan    *dynamoui.ScanModel      // nil unless scan is open
 
 	width  int
 	height int
@@ -144,6 +145,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.tables.SetSize(w, h)
 		if a.tableDescribe != nil {
 			a.tableDescribe.SetSize(w, h)
+		}
+		if a.tableScan != nil {
+			a.tableScan.SetSize(w, h)
 		}
 		// Only forward to picker if it has been constructed (mode==Profile).
 		if a.mode == ModeProfile {
@@ -260,6 +264,31 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.lambdaDetail = &d
 			return a, cmd
 		}
+		// Dynamo scan owns input when open.
+		if a.mode == ModeDynamo && a.tableScan != nil {
+			switch {
+			case keyMatches(msg, a.keys.Quit):
+				a.quitting = true
+				return a, tea.Quit
+			case keyMatches(msg, a.keys.Profile):
+				a.prevMode = a.mode
+				a.mode = ModeProfile
+				a.picker = profile.New(a.status.Profile, a.status.Region)
+				var cmd tea.Cmd
+				a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				return a, tea.Batch(a.picker.Init(), cmd)
+			case msg.String() == "esc":
+				a.tableScan = nil
+				return a, nil
+			case keyMatches(msg, a.keys.Lambda):
+				a.mode = ModeLambda
+				a.tabs.Active = 0
+				return a, nil
+			}
+			s, cmd := a.tableScan.Update(msg)
+			a.tableScan = &s
+			return a, cmd
+		}
 		// Dynamo describe owns input when open.
 		if a.mode == ModeDynamo && a.tableDescribe != nil {
 			switch {
@@ -275,6 +304,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(a.picker.Init(), cmd)
 			case msg.String() == "esc":
 				a.tableDescribe = nil
+				return a, nil
+			case msg.String() == "s":
+				name := a.tableDescribe.Name()
+				if name != "" && a.cfg != nil {
+					s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name)
+					w, h := a.contentSize()
+					s.SetSize(w, h)
+					a.tableScan = &s
+					return a, s.Init()
+				}
 				return a, nil
 			case keyMatches(msg, a.keys.Lambda):
 				a.mode = ModeLambda
@@ -352,6 +391,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.SetSize(w, h)
 			a.tableDescribe = &d
 			return a, d.Init()
+		case msg.String() == "s" && a.mode == ModeDynamo && !a.tables.IsFiltering():
+			name := a.tables.Selected()
+			if name == "" || a.cfg == nil {
+				return a, nil
+			}
+			s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name)
+			w, h := a.contentSize()
+			s.SetSize(w, h)
+			a.tableScan = &s
+			return a, s.Init()
 		}
 		// Forward unhandled keys to the active screen.
 		if a.mode == ModeLambda {
@@ -369,7 +418,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Forward non-key messages (spinner ticks, loadedMsg, detailLoadedMsg) to
 	// both the list and detail screens so background loads complete regardless
 	// of which is currently visible.
-	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6 tea.Cmd
+	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7 tea.Cmd
 	a.lambdas, cmd1 = a.lambdas.Update(msg)
 	if a.lambdaDetail != nil {
 		d, c := a.lambdaDetail.Update(msg)
@@ -392,7 +441,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.tableDescribe = &d
 		cmd6 = c
 	}
-	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6)
+	if a.tableScan != nil {
+		s, c := a.tableScan.Update(msg)
+		a.tableScan = &s
+		cmd7 = c
+	}
+	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7)
 }
 
 // View implements tea.Model.
@@ -418,7 +472,9 @@ func (a App) View() string {
 			body = a.lambdas.View()
 		}
 	case ModeDynamo:
-		if a.tableDescribe != nil {
+		if a.tableScan != nil {
+			body = a.tableScan.View()
+		} else if a.tableDescribe != nil {
 			body = a.tableDescribe.View()
 		} else {
 			body = a.tables.View()
