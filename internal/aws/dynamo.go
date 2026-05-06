@@ -104,10 +104,19 @@ type QueryResult struct {
 
 // Query executes a single-page DynamoDB Query.
 func (c *DynamoClient) Query(ctx context.Context, in QueryInput) (*QueryResult, error) {
+	return c.QueryWithNames(ctx, in, nil)
+}
+
+// QueryWithNames executes a single-page Query with optional
+// ExpressionAttributeNames placeholders (e.g. "#pk" -> "userId").
+func (c *DynamoClient) QueryWithNames(ctx context.Context, in QueryInput, names map[string]string) (*QueryResult, error) {
 	req := &dynamodb.QueryInput{
 		TableName:                 &in.Table,
 		KeyConditionExpression:    &in.KeyConditionExpression,
 		ExpressionAttributeValues: in.ExpressionValues,
+	}
+	if len(names) > 0 {
+		req.ExpressionAttributeNames = names
 	}
 	if in.IndexName != "" {
 		req.IndexName = &in.IndexName

@@ -216,6 +216,22 @@ func TestDynamoCRUDAndQuery(t *testing.T) {
 		t.Fatalf("expected 3 queried items, got %d", len(q.Items))
 	}
 
+	// QueryWithNames + BEGINS_WITH on sort key.
+	qn, err := dc.QueryWithNames(ctx, QueryInput{
+		Table:                  table,
+		KeyConditionExpression: "#pk = :p AND begins_with(#sk, :s)",
+		ExpressionValues: map[string]ddbtypes.AttributeValue{
+			":p": &ddbtypes.AttributeValueMemberS{Value: "user#1"},
+			":s": &ddbtypes.AttributeValueMemberS{Value: "a"},
+		},
+	}, map[string]string{"#pk": "pk", "#sk": "sk"})
+	if err != nil {
+		t.Fatalf("QueryWithNames: %v", err)
+	}
+	if len(qn.Items) != 1 {
+		t.Fatalf("expected 1 begins_with item, got %d", len(qn.Items))
+	}
+
 	// PartiQL.
 	stmt := fmt.Sprintf(`SELECT pk, sk FROM "%s" WHERE pk = 'user#1'`, table)
 	rows, err := dc.PartiQL(ctx, stmt)
