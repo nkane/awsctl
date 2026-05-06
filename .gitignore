@@ -1,0 +1,17 @@
+# Build artifacts
+/dist/
+/awsctl
+/ac
+*.test
+*.out
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp

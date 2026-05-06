@@ -1,0 +1,21 @@
+# LocalStack for awsctl integration tests.
+# Bring up: docker compose -f docker-compose.localstack.yml up -d
+# Tear down: docker compose -f docker-compose.localstack.yml down -v
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: awsctl-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=lambda,dynamodb,logs,iam,sts,cloudwatch
+      - DEBUG=0
+      - LAMBDA_RUNTIME_EXECUTOR=docker
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

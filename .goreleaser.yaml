@@ -1,0 +1,86 @@
+# goreleaser config for awsctl. Builds awsctl + ac alias for 5 OS targets.
+version: 2
+
+project_name: awsctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: awsctl
+    main: ./cmd/awsctl
+    binary: awsctl
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    ids: [awsctl]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+    wrap_in_directory: true
+    # Note: the `ac` alias is created post-install via brew/scoop hooks below.
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+homebrew_casks:
+  - name: awsctl
+    repository:
+      owner: nkane
+      name: homebrew-tap
+    homepage: "https://github.com/nkane/awsctl"
+    description: "TUI for managing AWS Lambda + DynamoDB"
+    license: "MIT"
+    binaries:
+      - awsctl
+    hooks:
+      post:
+        install: |
+          # Symlink `ac` -> awsctl in the same Cellar bin dir.
+          require "fileutils"
+          target = "#{HOMEBREW_PREFIX}/bin/awsctl"
+          link   = "#{HOMEBREW_PREFIX}/bin/ac"
+          File.symlink(target, link) unless File.exist?(link)
+
+scoops:
+  - repository:
+      owner: nkane
+      name: scoop-bucket
+    homepage: "https://github.com/nkane/awsctl"
+    description: "TUI for managing AWS Lambda + DynamoDB"
+    license: MIT
+    post_install:
+      - 'New-Item -ItemType SymbolicLink -Path "$dir\ac.exe" -Target "$dir\awsctl.exe" -Force | Out-Null'
+
+release:
+  github:
+    owner: nkane
+    name: awsctl
+  draft: true
+  prerelease: auto
