@@ -11,6 +11,7 @@ import (
 
 	awsx "github.com/nkane/awsctl/internal/aws"
 	"github.com/nkane/awsctl/internal/ui/components"
+	dynamoui "github.com/nkane/awsctl/internal/ui/dynamo"
 	lambdaui "github.com/nkane/awsctl/internal/ui/lambda"
 	"github.com/nkane/awsctl/internal/ui/profile"
 )
@@ -43,6 +44,9 @@ type App struct {
 	lambdaDetail *lambdaui.DetailModel // nil unless a function is being viewed
 	lambdaInvoke *lambdaui.InvokeModel // nil unless invoke screen is open
 	lambdaLogs   *lambdaui.LogsModel   // nil unless log tail is open
+
+	tables       dynamoui.ListModel
+	tableDescribe *dynamoui.DescribeModel // nil unless describe is open
 
 	width  int
 	height int
@@ -79,6 +83,7 @@ func NewApp(opts Options) App {
 		theme:   theme,
 		keys:    DefaultKeys(),
 		lambdas: lambdaui.NewList(),
+		tables:  dynamoui.NewList(),
 		tabs: components.Tabs{
 			Items:    []string{"[1] Lambda", "[2] DynamoDB"},
 			Active:   0,
@@ -136,6 +141,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.lambdaLogs != nil {
 			a.lambdaLogs.SetSize(w, h)
 		}
+		a.tables.SetSize(w, h)
+		if a.tableDescribe != nil {
+			a.tableDescribe.SetSize(w, h)
+		}
 		// Only forward to picker if it has been constructed (mode==Profile).
 		if a.mode == ModeProfile {
 			var cmd tea.Cmd
@@ -157,7 +166,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.opts.Logger.Info("aws config loaded", "profile", msg.cfg.Profile, "region", msg.cfg.Region)
 		// Hand a fresh Lambda client to the list screen and trigger first fetch.
 		a.lambdas.SetClient(awsx.NewLambdaClient(msg.cfg))
-		return a, a.lambdas.Refresh()
+		a.tables.SetClient(awsx.NewDynamoClient(msg.cfg))
+		return a, tea.Batch(a.lambdas.Refresh(), a.tables.Refresh())
 
 	case profile.Selected:
 		a.mode = a.prevMode
@@ -250,10 +260,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.lambdaDetail = &d
 			return a, cmd
 		}
+		// Dynamo describe owns input when open.
+		if a.mode == ModeDynamo && a.tableDescribe != nil {
+			switch {
+			case keyMatches(msg, a.keys.Quit):
+				a.quitting = true
+				return a, tea.Quit
+			case keyMatches(msg, a.keys.Profile):
+				a.prevMode = a.mode
+				a.mode = ModeProfile
+				a.picker = profile.New(a.status.Profile, a.status.Region)
+				var cmd tea.Cmd
+				a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				return a, tea.Batch(a.picker.Init(), cmd)
+			case msg.String() == "esc":
+				a.tableDescribe = nil
+				return a, nil
+			case keyMatches(msg, a.keys.Lambda):
+				a.mode = ModeLambda
+				a.tabs.Active = 0
+				return a, nil
+			}
+			d, cmd := a.tableDescribe.Update(msg)
+			a.tableDescribe = &d
+			return a, cmd
+		}
 		switch {
 		case keyMatches(msg, a.keys.Quit):
-			// Don't quit if the lambda list is currently filtering.
+			// Don't quit if a list is currently filtering.
 			if a.mode == ModeLambda && a.lambdas.IsFiltering() {
+				break
+			}
+			if a.mode == ModeDynamo && a.tables.IsFiltering() {
 				break
 			}
 			a.quitting = true
@@ -304,6 +342,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lg.SetSize(w, h)
 			a.lambdaLogs = &lg
 			return a, lg.Init()
+		case msg.String() == "enter" && a.mode == ModeDynamo && !a.tables.IsFiltering():
+			name := a.tables.Selected()
+			if name == "" || a.cfg == nil {
+				return a, nil
+			}
+			d := dynamoui.NewDescribe(awsx.NewDynamoClient(a.cfg), name)
+			w, h := a.contentSize()
+			d.SetSize(w, h)
+			a.tableDescribe = &d
+			return a, d.Init()
 		}
 		// Forward unhandled keys to the active screen.
 		if a.mode == ModeLambda {
@@ -311,12 +359,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.lambdas, cmd = a.lambdas.Update(msg)
 			return a, cmd
 		}
+		if a.mode == ModeDynamo {
+			var cmd tea.Cmd
+			a.tables, cmd = a.tables.Update(msg)
+			return a, cmd
+		}
 	}
 
 	// Forward non-key messages (spinner ticks, loadedMsg, detailLoadedMsg) to
 	// both the list and detail screens so background loads complete regardless
 	// of which is currently visible.
-	var cmd1, cmd2, cmd3, cmd4 tea.Cmd
+	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6 tea.Cmd
 	a.lambdas, cmd1 = a.lambdas.Update(msg)
 	if a.lambdaDetail != nil {
 		d, c := a.lambdaDetail.Update(msg)
@@ -333,7 +386,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lambdaLogs = &lg
 		cmd4 = c
 	}
-	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4)
+	a.tables, cmd5 = a.tables.Update(msg)
+	if a.tableDescribe != nil {
+		d, c := a.tableDescribe.Update(msg)
+		a.tableDescribe = &d
+		cmd6 = c
+	}
+	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6)
 }
 
 // View implements tea.Model.
