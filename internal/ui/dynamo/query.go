@@ -67,7 +67,8 @@ type QueryModel struct {
 	page     int
 	totItems int
 	lek      map[string]ddbtypes.AttributeValue
-	buf      strings.Builder
+	items    []map[string]ddbtypes.AttributeValue
+	cursor   int
 
 	width  int
 	height int
@@ -116,6 +117,11 @@ func (m QueryModel) Init() tea.Cmd {
 // Name returns the table name.
 func (m QueryModel) Name() string { return m.table }
 
+// InputFocused reports whether one of the textinput fields owns input.
+func (m QueryModel) InputFocused() bool {
+	return m.focus == 1 || m.focus == 3 || m.focus == 4
+}
+
 // SetSize sizes the viewport (form takes ~10 lines, results take rest).
 func (m *QueryModel) SetSize(w, h int) {
 	m.width, m.height = w, h
@@ -161,9 +167,8 @@ func (m QueryModel) Update(msg tea.Msg) (QueryModel, tea.Cmd) {
 		m.page++
 		m.totItems += len(msg.res.Items)
 		m.lek = msg.res.LastEvaluatedKey
-		m.buf.WriteString(renderPage(m.page, msg.res.Items))
-		m.vp.SetContent(m.buf.String())
-		m.vp.GotoBottom()
+		m.items = append(m.items, msg.res.Items...)
+		m.refreshResults()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -218,6 +223,26 @@ func (m QueryModel) Update(msg tea.Msg) (QueryModel, tea.Cmd) {
 				break
 			}
 			m.resetResults()
+			return m, nil
+		case "j", "down":
+			if m.focus == 1 || m.focus == 3 || m.focus == 4 {
+				break
+			}
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+				m.refreshResults()
+				m.ensureCursorVisible()
+			}
+			return m, nil
+		case "k", "up":
+			if m.focus == 1 || m.focus == 3 || m.focus == 4 {
+				break
+			}
+			if m.cursor > 0 {
+				m.cursor--
+				m.refreshResults()
+				m.ensureCursorVisible()
+			}
 			return m, nil
 		}
 	}
@@ -308,8 +333,70 @@ func (m *QueryModel) resetResults() {
 	m.page = 0
 	m.totItems = 0
 	m.lek = nil
-	m.buf.Reset()
+	m.items = nil
+	m.cursor = 0
 	m.vp.SetContent("")
+}
+
+// refreshResults re-renders the items array into the viewport with cursor.
+func (m *QueryModel) refreshResults() {
+	if len(m.items) == 0 {
+		m.vp.SetContent("")
+		return
+	}
+	var b strings.Builder
+	cursorSty := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	for i, it := range m.items {
+		marker := "  "
+		line := summarizeItem(it)
+		if i == m.cursor {
+			marker = cursorSty.Render("▸ ")
+			line = cursorSty.Render(line)
+		}
+		fmt.Fprintf(&b, "%s%s\n", marker, line)
+	}
+	m.vp.SetContent(b.String())
+}
+
+// ensureCursorVisible scrolls so the cursor row stays in view.
+func (m *QueryModel) ensureCursorVisible() {
+	row := m.cursor
+	top := m.vp.YOffset
+	bot := top + m.vp.Height - 1
+	if row < top {
+		m.vp.SetYOffset(row)
+	} else if row > bot {
+		m.vp.SetYOffset(row - m.vp.Height + 1)
+	}
+}
+
+// Selected returns the highlighted item from the results, or nil.
+func (m QueryModel) Selected() map[string]ddbtypes.AttributeValue {
+	if m.cursor < 0 || m.cursor >= len(m.items) {
+		return nil
+	}
+	return m.items[m.cursor]
+}
+
+// SelectedKey extracts the base-table primary key from the selected item.
+// (Index queries still return base-table keys, so this works regardless of
+// which index was queried.)
+func (m QueryModel) SelectedKey() map[string]ddbtypes.AttributeValue {
+	it := m.Selected()
+	if it == nil || m.desc == nil {
+		return nil
+	}
+	out := map[string]ddbtypes.AttributeValue{}
+	for _, k := range m.desc.KeySchema {
+		name := strDeref(k.AttributeName)
+		if v, ok := it[name]; ok {
+			out[name] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // advanceFocus moves focus by delta, skipping unavailable inputs.

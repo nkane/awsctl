@@ -241,6 +241,33 @@ func TestDynamoCRUDAndQuery(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("PartiQL expected 3 rows, got %d", len(rows))
 	}
+
+	// GetItem by full primary key.
+	got, err := dc.GetItem(ctx, table, map[string]ddbtypes.AttributeValue{
+		"pk": &ddbtypes.AttributeValueMemberS{Value: "user#1"},
+		"sk": &ddbtypes.AttributeValueMemberS{Value: "b"},
+	})
+	if err != nil {
+		t.Fatalf("GetItem: %v", err)
+	}
+	if got == nil {
+		t.Fatalf("GetItem returned nil for existing key")
+	}
+	if v, ok := got["sk"].(*ddbtypes.AttributeValueMemberS); !ok || v.Value != "b" {
+		t.Fatalf("GetItem sk mismatch: %+v", got["sk"])
+	}
+
+	// GetItem missing → nil, no error.
+	miss, err := dc.GetItem(ctx, table, map[string]ddbtypes.AttributeValue{
+		"pk": &ddbtypes.AttributeValueMemberS{Value: "user#1"},
+		"sk": &ddbtypes.AttributeValueMemberS{Value: "zzz-missing"},
+	})
+	if err != nil {
+		t.Fatalf("GetItem(missing): %v", err)
+	}
+	if miss != nil {
+		t.Fatalf("expected nil for missing key, got %+v", miss)
+	}
 }
 
 // ---------- CloudWatch Logs ----------

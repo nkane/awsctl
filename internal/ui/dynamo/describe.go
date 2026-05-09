@@ -71,6 +71,19 @@ func (m DescribeModel) Init() tea.Cmd {
 // Name returns the table name (used by app for status bar).
 func (m DescribeModel) Name() string { return m.name }
 
+// Keys returns the primary key attribute names ([pk] or [pk, sk]) once the
+// describe has loaded; nil otherwise.
+func (m DescribeModel) Keys() []string {
+	if m.desc == nil {
+		return nil
+	}
+	out := make([]string, 0, len(m.desc.KeySchema))
+	for _, k := range m.desc.KeySchema {
+		out = append(out, strDeref(k.AttributeName))
+	}
+	return out
+}
+
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *DescribeModel) SetSize(w, h int) {
 	m.width, m.height = w, h

@@ -49,6 +49,7 @@ type App struct {
 	tableDescribe *dynamoui.DescribeModel // nil unless describe is open
 	tableScan    *dynamoui.ScanModel      // nil unless scan is open
 	tableQuery   *dynamoui.QueryModel     // nil unless query is open
+	tableItem    *dynamoui.ItemModel      // nil unless item view is open
 
 	width  int
 	height int
@@ -152,6 +153,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.tableQuery != nil {
 			a.tableQuery.SetSize(w, h)
+		}
+		if a.tableItem != nil {
+			a.tableItem.SetSize(w, h)
 		}
 		// Only forward to picker if it has been constructed (mode==Profile).
 		if a.mode == ModeProfile {
@@ -268,6 +272,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.lambdaDetail = &d
 			return a, cmd
 		}
+		// Dynamo item view owns input when open.
+		if a.mode == ModeDynamo && a.tableItem != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				a.quitting = true
+				return a, tea.Quit
+			case "esc":
+				a.tableItem = nil
+				return a, nil
+			}
+			it, cmd := a.tableItem.Update(msg)
+			a.tableItem = &it
+			return a, cmd
+		}
 		// Dynamo query owns input when open (textinputs need most keys).
 		if a.mode == ModeDynamo && a.tableQuery != nil {
 			switch msg.String() {
@@ -277,6 +295,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				a.tableQuery = nil
 				return a, nil
+			case "o":
+				if !a.tableQuery.InputFocused() {
+					it := a.tableQuery.Selected()
+					if it != nil && a.cfg != nil {
+						key := a.tableQuery.SelectedKey()
+						iv := dynamoui.NewItem(awsx.NewDynamoClient(a.cfg), a.tableQuery.Name(), it, key)
+						w, h := a.contentSize()
+						iv.SetSize(w, h)
+						a.tableItem = &iv
+						return a, iv.Init()
+					}
+					return a, nil
+				}
 			}
 			qm, cmd := a.tableQuery.Update(msg)
 			a.tableQuery = &qm
@@ -298,6 +329,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "esc":
 				a.tableScan = nil
 				return a, nil
+			case msg.String() == "enter":
+				it := a.tableScan.Selected()
+				if it == nil || a.cfg == nil {
+					return a, nil
+				}
+				key := a.tableScan.SelectedKey()
+				iv := dynamoui.NewItem(awsx.NewDynamoClient(a.cfg), a.tableScan.Name(), it, key)
+				w, h := a.contentSize()
+				iv.SetSize(w, h)
+				a.tableItem = &iv
+				return a, iv.Init()
 			case keyMatches(msg, a.keys.Lambda):
 				a.mode = ModeLambda
 				a.tabs.Active = 0
@@ -326,7 +368,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "s":
 				name := a.tableDescribe.Name()
 				if name != "" && a.cfg != nil {
-					s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name)
+					s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name, a.tableDescribe.Keys())
 					w, h := a.contentSize()
 					s.SetSize(w, h)
 					a.tableScan = &s
@@ -424,7 +466,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if name == "" || a.cfg == nil {
 				return a, nil
 			}
-			s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name)
+			s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name, nil)
 			w, h := a.contentSize()
 			s.SetSize(w, h)
 			a.tableScan = &s
@@ -456,7 +498,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Forward non-key messages (spinner ticks, loadedMsg, detailLoadedMsg) to
 	// both the list and detail screens so background loads complete regardless
 	// of which is currently visible.
-	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8 tea.Cmd
+	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9 tea.Cmd
 	a.lambdas, cmd1 = a.lambdas.Update(msg)
 	if a.lambdaDetail != nil {
 		d, c := a.lambdaDetail.Update(msg)
@@ -489,7 +531,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.tableQuery = &qm
 		cmd8 = c
 	}
-	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8)
+	if a.tableItem != nil {
+		iv, c := a.tableItem.Update(msg)
+		a.tableItem = &iv
+		cmd9 = c
+	}
+	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9)
 }
 
 // View implements tea.Model.
@@ -515,7 +562,9 @@ func (a App) View() string {
 			body = a.lambdas.View()
 		}
 	case ModeDynamo:
-		if a.tableQuery != nil {
+		if a.tableItem != nil {
+			body = a.tableItem.View()
+		} else if a.tableQuery != nil {
 			body = a.tableQuery.View()
 		} else if a.tableScan != nil {
 			body = a.tableScan.View()

@@ -158,6 +158,19 @@ func (c *DynamoClient) PutItem(ctx context.Context, table string, item map[strin
 	return nil
 }
 
+// GetItem fetches a single item by primary key. Returns nil item if not found.
+func (c *DynamoClient) GetItem(ctx context.Context, table string, key map[string]ddbtypes.AttributeValue) (map[string]ddbtypes.AttributeValue, error) {
+	resp, err := c.api.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName:      &table,
+		Key:            key,
+		ConsistentRead: nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: get item %q: %w", table, err)
+	}
+	return resp.Item, nil
+}
+
 // CreateTable is exposed only for tests/seeding (see PutItem note).
 func (c *DynamoClient) CreateTable(ctx context.Context, in *dynamodb.CreateTableInput) error {
 	_, err := c.api.CreateTable(ctx, in)
