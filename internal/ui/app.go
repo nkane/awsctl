@@ -403,6 +403,13 @@ func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 		if msg.String() == "e" {
 			return a.push(t.OpenEvents(a.cfg)), true
 		}
+	case ecsui.TaskDefList:
+		if t.IsFiltering() {
+			return nil, false
+		}
+		if msg.String() == "enter" {
+			return a.push(t.OpenDescribe(a.cfg)), true
+		}
 	case ecsui.ContainerList:
 		if t.IsFiltering() {
 			return nil, false

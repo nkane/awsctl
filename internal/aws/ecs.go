@@ -103,6 +103,21 @@ func (c *EcsClient) ListTaskDefFamilies(ctx context.Context) ([]TaskDefFamilySum
 	return out, nil
 }
 
+// DescribeTaskDef returns a task definition. Given a family name it resolves
+// the latest ACTIVE revision; a family:revision or ARN resolves that revision.
+func (c *EcsClient) DescribeTaskDef(ctx context.Context, familyOrArn string) (*ecstypes.TaskDefinition, error) {
+	resp, err := c.api.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: &familyOrArn,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe task-definition %q: %w", familyOrArn, err)
+	}
+	if resp.TaskDefinition == nil {
+		return nil, fmt.Errorf("ecs: empty task-definition for %q", familyOrArn)
+	}
+	return resp.TaskDefinition, nil
+}
+
 // parseTaskDefArn splits a task-definition ARN tail into family + revision.
 func parseTaskDefArn(arn string) (string, string) {
 	tail := shortTaskDef(arn) // family:revision
