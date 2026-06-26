@@ -114,6 +114,79 @@ func (c *EcsClient) ListServices(ctx context.Context, cluster string) ([]Service
 	return out, nil
 }
 
+// TaskSummary is the UI-facing view of an ECS task.
+type TaskSummary struct {
+	ID         string // task id (ARN tail)
+	LastStatus string
+	Desired    string // desired status
+	Health     string
+	LaunchType string
+	TaskDef    string // family:revision
+	StartedAt  string // RFC3339, or "" if not started
+}
+
+// ListTasks returns the tasks for a service in a cluster with their status.
+// ListTasks pages task ARNs; DescribeTasks is batched at 100 per call.
+func (c *EcsClient) ListTasks(ctx context.Context, cluster, service string) ([]TaskSummary, error) {
+	arns := []string{}
+	p := ecs.NewListTasksPaginator(c.api, &ecs.ListTasksInput{
+		Cluster:     &cluster,
+		ServiceName: &service,
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("ecs: list tasks %q/%q: %w", cluster, service, err)
+		}
+		arns = append(arns, page.TaskArns...)
+	}
+	if len(arns) == 0 {
+		return nil, nil
+	}
+
+	out := make([]TaskSummary, 0, len(arns))
+	for start := 0; start < len(arns); start += 100 {
+		end := start + 100
+		if end > len(arns) {
+			end = len(arns)
+		}
+		resp, err := c.api.DescribeTasks(ctx, &ecs.DescribeTasksInput{
+			Cluster: &cluster,
+			Tasks:   arns[start:end],
+		})
+		if err != nil {
+			return nil, fmt.Errorf("ecs: describe tasks %q: %w", cluster, err)
+		}
+		for _, tk := range resp.Tasks {
+			out = append(out, taskSummary(tk))
+		}
+	}
+	return out, nil
+}
+
+func taskSummary(tk ecstypes.Task) TaskSummary {
+	s := TaskSummary{
+		Health:     string(tk.HealthStatus),
+		LaunchType: string(tk.LaunchType),
+	}
+	if tk.TaskArn != nil {
+		s.ID = shortTaskDef(*tk.TaskArn) // ARN tail is the task id
+	}
+	if tk.LastStatus != nil {
+		s.LastStatus = *tk.LastStatus
+	}
+	if tk.DesiredStatus != nil {
+		s.Desired = *tk.DesiredStatus
+	}
+	if tk.TaskDefinitionArn != nil {
+		s.TaskDef = shortTaskDef(*tk.TaskDefinitionArn)
+	}
+	if tk.StartedAt != nil {
+		s.StartedAt = tk.StartedAt.Format("2006-01-02 15:04:05")
+	}
+	return s
+}
+
 // DescribeService returns the full description of a single service, including
 // deployments, events, network config, and load balancers.
 func (c *EcsClient) DescribeService(ctx context.Context, cluster, name string) (*ecstypes.Service, error) {
