@@ -1,5 +1,7 @@
 package core
 
+import tea "github.com/charmbracelet/bubbletea"
+
 // Stack is a LIFO of Screens — the navigation history for one mode.
 //
 // Each top-level mode (Lambda, Dynamo, ECS) owns its own Stack so that switching
@@ -62,4 +64,17 @@ func (s *Stack) SetSize(w, h int) {
 	for _, scr := range s.screens {
 		scr.SetSize(w, h)
 	}
+}
+
+// Broadcast delivers a message to every screen in the stack and returns the
+// batched commands. Used for async messages (spinner ticks, data-loaded) so a
+// background screen's in-flight fetch completes even when it is not on top.
+func (s *Stack) Broadcast(msg tea.Msg) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(s.screens))
+	for i, scr := range s.screens {
+		ns, cmd := scr.Update(msg)
+		s.screens[i] = ns
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }

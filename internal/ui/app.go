@@ -3,14 +3,15 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	awsx "github.com/nkane/awsctl/internal/aws"
 	"github.com/nkane/awsctl/internal/ui/components"
+	"github.com/nkane/awsctl/internal/ui/core"
 	dynamoui "github.com/nkane/awsctl/internal/ui/dynamo"
 	lambdaui "github.com/nkane/awsctl/internal/ui/lambda"
 	"github.com/nkane/awsctl/internal/ui/profile"
@@ -33,23 +34,21 @@ type Options struct {
 	Logger  *slog.Logger
 }
 
-// App is the root Bubble Tea model.
+// App is the root Bubble Tea model. Each non-profile mode owns a navigation
+// Stack whose bottom is that mode's root list screen; drilling in pushes a
+// child screen, `esc` pops. The App handles global navigation and delegates
+// everything else to the active stack's top screen.
 type App struct {
-	opts         Options
-	cfg          *awsx.Config
-	mode         Mode
-	prevMode     Mode
-	picker       profile.Model
-	lambdas      lambdaui.ListModel
-	lambdaDetail *lambdaui.DetailModel // nil unless a function is being viewed
-	lambdaInvoke *lambdaui.InvokeModel // nil unless invoke screen is open
-	lambdaLogs   *lambdaui.LogsModel   // nil unless log tail is open
+	opts     Options
+	cfg      *awsx.Config
+	mode     Mode
+	prevMode Mode
+	picker   profile.Model
 
-	tables       dynamoui.ListModel
-	tableDescribe *dynamoui.DescribeModel // nil unless describe is open
-	tableScan    *dynamoui.ScanModel      // nil unless scan is open
-	tableQuery   *dynamoui.QueryModel     // nil unless query is open
-	tableItem    *dynamoui.ItemModel      // nil unless item view is open
+	lstack *core.Stack       // Lambda navigation stack
+	dstack *core.Stack       // Dynamo navigation stack
+	lroot  lambdaui.RootList // == lstack bottom; kept for client seeding
+	droot  dynamoui.RootList // == dstack bottom; kept for client seeding
 
 	width  int
 	height int
@@ -80,13 +79,17 @@ func loadAWSConfigCmd(profile, region string) tea.Cmd {
 // NewApp constructs the root model.
 func NewApp(opts Options) App {
 	theme := NewTheme()
+	lroot := lambdaui.NewListScreen()
+	droot := dynamoui.NewListScreen()
 	return App{
-		opts:    opts,
-		mode:    ModeLambda,
-		theme:   theme,
-		keys:    DefaultKeys(),
-		lambdas: lambdaui.NewList(),
-		tables:  dynamoui.NewList(),
+		opts:   opts,
+		mode:   ModeLambda,
+		theme:  theme,
+		keys:   DefaultKeys(),
+		lroot:  lroot,
+		droot:  droot,
+		lstack: core.NewStack(lroot),
+		dstack: core.NewStack(droot),
 		tabs: components.Tabs{
 			Items:    []string{"[1] Lambda", "[2] DynamoDB"},
 			Active:   0,
@@ -127,6 +130,27 @@ func (a App) contentSize() (int, int) {
 	return a.width, h
 }
 
+// active returns the navigation stack for the current mode.
+func (a App) active() *core.Stack {
+	if a.mode == ModeDynamo {
+		return a.dstack
+	}
+	return a.lstack
+}
+
+// push pushes a screen onto the active stack, sizes it, and returns its Init
+// command. A nil screen (e.g. a builder with no selection) is a no-op.
+func (a App) push(s core.Screen) tea.Cmd {
+	if s == nil {
+		return nil
+	}
+	st := a.active()
+	st.Push(s)
+	w, h := a.contentSize()
+	s.SetSize(w, h)
+	return s.Init()
+}
+
 // Update implements tea.Model.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -134,30 +158,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width, a.height = msg.Width, msg.Height
 		a.status.Width = msg.Width
 		w, h := a.contentSize()
-		a.lambdas.SetSize(w, h)
-		if a.lambdaDetail != nil {
-			a.lambdaDetail.SetSize(w, h)
-		}
-		if a.lambdaInvoke != nil {
-			a.lambdaInvoke.SetSize(w, h)
-		}
-		if a.lambdaLogs != nil {
-			a.lambdaLogs.SetSize(w, h)
-		}
-		a.tables.SetSize(w, h)
-		if a.tableDescribe != nil {
-			a.tableDescribe.SetSize(w, h)
-		}
-		if a.tableScan != nil {
-			a.tableScan.SetSize(w, h)
-		}
-		if a.tableQuery != nil {
-			a.tableQuery.SetSize(w, h)
-		}
-		if a.tableItem != nil {
-			a.tableItem.SetSize(w, h)
-		}
-		// Only forward to picker if it has been constructed (mode==Profile).
+		a.lstack.SetSize(w, h)
+		a.dstack.SetSize(w, h)
 		if a.mode == ModeProfile {
 			var cmd tea.Cmd
 			a.picker, cmd = a.picker.Update(msg)
@@ -176,10 +178,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status.Region = msg.cfg.Region
 		a.lastErr = ""
 		a.opts.Logger.Info("aws config loaded", "profile", msg.cfg.Profile, "region", msg.cfg.Region)
-		// Hand a fresh Lambda client to the list screen and trigger first fetch.
-		a.lambdas.SetClient(awsx.NewLambdaClient(msg.cfg))
-		a.tables.SetClient(awsx.NewDynamoClient(msg.cfg))
-		return a, tea.Batch(a.lambdas.Refresh(), a.tables.Refresh())
+		// Reset both stacks to fresh roots wired with clients for the new config,
+		// dropping any drill-down that belonged to the previous profile/region.
+		a.lroot = lambdaui.NewListScreen()
+		a.droot = dynamoui.NewListScreen()
+		a.lstack = core.NewStack(a.lroot)
+		a.dstack = core.NewStack(a.droot)
+		w, h := a.contentSize()
+		a.lstack.SetSize(w, h)
+		a.dstack.SetSize(w, h)
+		a.lroot.SetClient(awsx.NewLambdaClient(msg.cfg))
+		a.droot.SetClient(awsx.NewDynamoClient(msg.cfg))
+		return a, tea.Batch(a.lroot.Refresh(), a.droot.Refresh())
 
 	case profile.Selected:
 		a.mode = a.prevMode
@@ -189,6 +199,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.mode = a.prevMode
 		return a, nil
 
+	case core.PushMsg:
+		return a, a.push(msg.Screen)
+
+	case core.PopMsg:
+		a.active().Pop()
+		return a, nil
+
 	case tea.KeyMsg:
 		// Picker owns input while open.
 		if a.mode == ModeProfile {
@@ -196,347 +213,130 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.picker, cmd = a.picker.Update(msg)
 			return a, cmd
 		}
-		// Lambda logs owns input when open.
-		if a.mode == ModeLambda && a.lambdaLogs != nil {
-			switch msg.String() {
-			case "ctrl+c":
-				a.quitting = true
-				return a, tea.Quit
-			case "esc":
-				// If filter input is active, let logs model handle esc.
-				if !a.lambdaLogs.FilterFocused() {
-					a.lambdaLogs = nil
-					return a, nil
-				}
-			}
-			lg, cmd := a.lambdaLogs.Update(msg)
-			a.lambdaLogs = &lg
-			return a, cmd
-		}
-		// Lambda invoke owns input when open.
-		if a.mode == ModeLambda && a.lambdaInvoke != nil {
-			switch {
-			case keyMatches(msg, a.keys.Quit) && msg.String() != "q":
-				// only ctrl+c quits while editing; 'q' is a valid char in payload.
-				a.quitting = true
-				return a, tea.Quit
-			case msg.String() == "esc":
-				a.lambdaInvoke = nil
-				return a, nil
-			}
-			inv, cmd := a.lambdaInvoke.Update(msg)
-			a.lambdaInvoke = &inv
-			return a, cmd
-		}
-		// Lambda detail owns input when open (except global tab/profile/quit).
-		if a.mode == ModeLambda && a.lambdaDetail != nil {
-			switch {
-			case keyMatches(msg, a.keys.Quit):
-				a.quitting = true
-				return a, tea.Quit
-			case keyMatches(msg, a.keys.Profile):
-				a.prevMode = a.mode
-				a.mode = ModeProfile
-				a.picker = profile.New(a.status.Profile, a.status.Region)
-				var cmd tea.Cmd
-				a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-				return a, tea.Batch(a.picker.Init(), cmd)
-			case msg.String() == "esc":
-				a.lambdaDetail = nil
-				return a, nil
-			case msg.String() == "i":
-				name := a.lambdaDetail.Name()
-				if name != "" && a.cfg != nil {
-					inv := lambdaui.NewInvoke(awsx.NewLambdaClient(a.cfg), name)
-					w, h := a.contentSize()
-					inv.SetSize(w, h)
-					a.lambdaInvoke = &inv
-				}
-				return a, nil
-			case msg.String() == "l":
-				name := a.lambdaDetail.Name()
-				if name != "" && a.cfg != nil {
-					lg := lambdaui.NewLogs(awsx.NewLogsClient(a.cfg), name)
-					w, h := a.contentSize()
-					lg.SetSize(w, h)
-					a.lambdaLogs = &lg
-					return a, lg.Init()
-				}
-				return a, nil
-			case keyMatches(msg, a.keys.Dynamo):
-				a.mode = ModeDynamo
-				a.tabs.Active = 1
-				return a, nil
-			}
-			d, cmd := a.lambdaDetail.Update(msg)
-			a.lambdaDetail = &d
-			return a, cmd
-		}
-		// Dynamo item view owns input when open.
-		if a.mode == ModeDynamo && a.tableItem != nil {
-			switch msg.String() {
-			case "ctrl+c":
-				a.quitting = true
-				return a, tea.Quit
-			case "esc":
-				a.tableItem = nil
-				return a, nil
-			}
-			it, cmd := a.tableItem.Update(msg)
-			a.tableItem = &it
-			return a, cmd
-		}
-		// Dynamo query owns input when open (textinputs need most keys).
-		if a.mode == ModeDynamo && a.tableQuery != nil {
-			switch msg.String() {
-			case "ctrl+c":
-				a.quitting = true
-				return a, tea.Quit
-			case "esc":
-				a.tableQuery = nil
-				return a, nil
-			case "o":
-				if !a.tableQuery.InputFocused() {
-					it := a.tableQuery.Selected()
-					if it != nil && a.cfg != nil {
-						key := a.tableQuery.SelectedKey()
-						iv := dynamoui.NewItem(awsx.NewDynamoClient(a.cfg), a.tableQuery.Name(), it, key)
-						w, h := a.contentSize()
-						iv.SetSize(w, h)
-						a.tableItem = &iv
-						return a, iv.Init()
-					}
-					return a, nil
-				}
-			}
-			qm, cmd := a.tableQuery.Update(msg)
-			a.tableQuery = &qm
-			return a, cmd
-		}
-		// Dynamo scan owns input when open.
-		if a.mode == ModeDynamo && a.tableScan != nil {
-			switch {
-			case keyMatches(msg, a.keys.Quit):
-				a.quitting = true
-				return a, tea.Quit
-			case keyMatches(msg, a.keys.Profile):
-				a.prevMode = a.mode
-				a.mode = ModeProfile
-				a.picker = profile.New(a.status.Profile, a.status.Region)
-				var cmd tea.Cmd
-				a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-				return a, tea.Batch(a.picker.Init(), cmd)
-			case msg.String() == "esc":
-				a.tableScan = nil
-				return a, nil
-			case msg.String() == "enter":
-				it := a.tableScan.Selected()
-				if it == nil || a.cfg == nil {
-					return a, nil
-				}
-				key := a.tableScan.SelectedKey()
-				iv := dynamoui.NewItem(awsx.NewDynamoClient(a.cfg), a.tableScan.Name(), it, key)
-				w, h := a.contentSize()
-				iv.SetSize(w, h)
-				a.tableItem = &iv
-				return a, iv.Init()
-			case keyMatches(msg, a.keys.Lambda):
-				a.mode = ModeLambda
-				a.tabs.Active = 0
-				return a, nil
-			}
-			s, cmd := a.tableScan.Update(msg)
-			a.tableScan = &s
-			return a, cmd
-		}
-		// Dynamo describe owns input when open.
-		if a.mode == ModeDynamo && a.tableDescribe != nil {
-			switch {
-			case keyMatches(msg, a.keys.Quit):
-				a.quitting = true
-				return a, tea.Quit
-			case keyMatches(msg, a.keys.Profile):
-				a.prevMode = a.mode
-				a.mode = ModeProfile
-				a.picker = profile.New(a.status.Profile, a.status.Region)
-				var cmd tea.Cmd
-				a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-				return a, tea.Batch(a.picker.Init(), cmd)
-			case msg.String() == "esc":
-				a.tableDescribe = nil
-				return a, nil
-			case msg.String() == "s":
-				name := a.tableDescribe.Name()
-				if name != "" && a.cfg != nil {
-					s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name, a.tableDescribe.Keys())
-					w, h := a.contentSize()
-					s.SetSize(w, h)
-					a.tableScan = &s
-					return a, s.Init()
-				}
-				return a, nil
-			case msg.String() == "Q":
-				name := a.tableDescribe.Name()
-				if name != "" && a.cfg != nil {
-					qm := dynamoui.NewQuery(awsx.NewDynamoClient(a.cfg), name)
-					w, h := a.contentSize()
-					qm.SetSize(w, h)
-					a.tableQuery = &qm
-					return a, qm.Init()
-				}
-				return a, nil
-			case keyMatches(msg, a.keys.Lambda):
-				a.mode = ModeLambda
-				a.tabs.Active = 0
-				return a, nil
-			}
-			d, cmd := a.tableDescribe.Update(msg)
-			a.tableDescribe = &d
-			return a, cmd
-		}
-		switch {
-		case keyMatches(msg, a.keys.Quit):
-			// Don't quit if a list is currently filtering.
-			if a.mode == ModeLambda && a.lambdas.IsFiltering() {
-				break
-			}
-			if a.mode == ModeDynamo && a.tables.IsFiltering() {
-				break
-			}
-			a.quitting = true
-			return a, tea.Quit
-		case keyMatches(msg, a.keys.Lambda):
-			a.mode = ModeLambda
-			a.tabs.Active = 0
-			return a, nil
-		case keyMatches(msg, a.keys.Dynamo):
-			a.mode = ModeDynamo
-			a.tabs.Active = 1
-			return a, nil
-		case keyMatches(msg, a.keys.Profile):
-			a.prevMode = a.mode
-			a.mode = ModeProfile
-			a.picker = profile.New(a.status.Profile, a.status.Region)
-			// Seed picker with current size so its list renders.
-			var cmd tea.Cmd
-			a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-			return a, tea.Batch(a.picker.Init(), cmd)
-		case msg.String() == "enter" && a.mode == ModeLambda && !a.lambdas.IsFiltering():
-			sel := a.lambdas.Selected()
-			if sel.Name == "" || a.cfg == nil {
-				return a, nil
-			}
-			d := lambdaui.NewDetail(awsx.NewLambdaClient(a.cfg), sel.Name)
-			w, h := a.contentSize()
-			d.SetSize(w, h)
-			a.lambdaDetail = &d
-			return a, d.Init()
-		case msg.String() == "i" && a.mode == ModeLambda && !a.lambdas.IsFiltering():
-			sel := a.lambdas.Selected()
-			if sel.Name == "" || a.cfg == nil {
-				return a, nil
-			}
-			inv := lambdaui.NewInvoke(awsx.NewLambdaClient(a.cfg), sel.Name)
-			w, h := a.contentSize()
-			inv.SetSize(w, h)
-			a.lambdaInvoke = &inv
-			return a, nil
-		case msg.String() == "l" && a.mode == ModeLambda && !a.lambdas.IsFiltering():
-			sel := a.lambdas.Selected()
-			if sel.Name == "" || a.cfg == nil {
-				return a, nil
-			}
-			lg := lambdaui.NewLogs(awsx.NewLogsClient(a.cfg), sel.Name)
-			w, h := a.contentSize()
-			lg.SetSize(w, h)
-			a.lambdaLogs = &lg
-			return a, lg.Init()
-		case msg.String() == "enter" && a.mode == ModeDynamo && !a.tables.IsFiltering():
-			name := a.tables.Selected()
-			if name == "" || a.cfg == nil {
-				return a, nil
-			}
-			d := dynamoui.NewDescribe(awsx.NewDynamoClient(a.cfg), name)
-			w, h := a.contentSize()
-			d.SetSize(w, h)
-			a.tableDescribe = &d
-			return a, d.Init()
-		case msg.String() == "s" && a.mode == ModeDynamo && !a.tables.IsFiltering():
-			name := a.tables.Selected()
-			if name == "" || a.cfg == nil {
-				return a, nil
-			}
-			s := dynamoui.NewScan(awsx.NewDynamoClient(a.cfg), name, nil)
-			w, h := a.contentSize()
-			s.SetSize(w, h)
-			a.tableScan = &s
-			return a, s.Init()
-		case msg.String() == "Q" && a.mode == ModeDynamo && !a.tables.IsFiltering():
-			name := a.tables.Selected()
-			if name == "" || a.cfg == nil {
-				return a, nil
-			}
-			qm := dynamoui.NewQuery(awsx.NewDynamoClient(a.cfg), name)
-			w, h := a.contentSize()
-			qm.SetSize(w, h)
-			a.tableQuery = &qm
-			return a, qm.Init()
-		}
-		// Forward unhandled keys to the active screen.
-		if a.mode == ModeLambda {
-			var cmd tea.Cmd
-			a.lambdas, cmd = a.lambdas.Update(msg)
-			return a, cmd
-		}
-		if a.mode == ModeDynamo {
-			var cmd tea.Cmd
-			a.tables, cmd = a.tables.Update(msg)
-			return a, cmd
-		}
+		return a.handleKey(msg)
 	}
 
-	// Forward non-key messages (spinner ticks, loadedMsg, detailLoadedMsg) to
-	// both the list and detail screens so background loads complete regardless
-	// of which is currently visible.
-	var cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9 tea.Cmd
-	a.lambdas, cmd1 = a.lambdas.Update(msg)
-	if a.lambdaDetail != nil {
-		d, c := a.lambdaDetail.Update(msg)
-		a.lambdaDetail = &d
-		cmd2 = c
+	// Non-key async messages (spinner ticks, data-loaded) go to every screen in
+	// both stacks so a background fetch completes regardless of what is on top.
+	return a, tea.Batch(a.lstack.Broadcast(msg), a.dstack.Broadcast(msg))
+}
+
+// handleKey routes a key press: ctrl+c quits, screen-specific drill keys push a
+// child, input-capturing screens swallow the rest, `esc` pops, and the global
+// shortcuts switch mode / open the profile picker.
+func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	st := a.active()
+	top := st.Top()
+
+	// ctrl+c always quits, even inside an editor.
+	if msg.String() == "ctrl+c" {
+		a.quitting = true
+		return a, tea.Quit
 	}
-	if a.lambdaInvoke != nil {
-		inv, c := a.lambdaInvoke.Update(msg)
-		a.lambdaInvoke = &inv
-		cmd3 = c
+
+	// Drill-in keys (screen-specific). Checked first so a screen can both edit
+	// text and expose a drill key when it is not currently focused.
+	if cmd, handled := a.drill(top, msg); handled {
+		return a, cmd
 	}
-	if a.lambdaLogs != nil {
-		lg, c := a.lambdaLogs.Update(msg)
-		a.lambdaLogs = &lg
-		cmd4 = c
+
+	// esc pops the stack, unless the screen wants esc to cancel an in-screen mode
+	// (an active filter, say). At the root, Pop is a no-op.
+	if msg.String() == "esc" {
+		if e, ok := top.(core.EscHandler); ok && e.WantsEsc() {
+			nt, cmd := top.Update(msg)
+			st.SetTop(nt)
+			return a, cmd
+		}
+		st.Pop()
+		return a, nil
 	}
-	a.tables, cmd5 = a.tables.Update(msg)
-	if a.tableDescribe != nil {
-		d, c := a.tableDescribe.Update(msg)
-		a.tableDescribe = &d
-		cmd6 = c
+
+	// Input-capturing screens (payload editor, active filter…) own every other
+	// key so navigation shortcuts don't steal literal input.
+	if c, ok := top.(core.InputCapturer); ok && c.CapturesInput() {
+		nt, cmd := top.Update(msg)
+		st.SetTop(nt)
+		return a, cmd
 	}
-	if a.tableScan != nil {
-		s, c := a.tableScan.Update(msg)
-		a.tableScan = &s
-		cmd7 = c
+
+	// Global navigation.
+	switch {
+	case keyMatches(msg, a.keys.Quit):
+		a.quitting = true
+		return a, tea.Quit
+	case keyMatches(msg, a.keys.Lambda):
+		a.mode = ModeLambda
+		a.tabs.Active = 0
+		return a, nil
+	case keyMatches(msg, a.keys.Dynamo):
+		a.mode = ModeDynamo
+		a.tabs.Active = 1
+		return a, nil
+	case keyMatches(msg, a.keys.Profile):
+		a.prevMode = a.mode
+		a.mode = ModeProfile
+		a.picker = profile.New(a.status.Profile, a.status.Region)
+		var cmd tea.Cmd
+		a.picker, cmd = a.picker.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+		return a, tea.Batch(a.picker.Init(), cmd)
 	}
-	if a.tableQuery != nil {
-		qm, c := a.tableQuery.Update(msg)
-		a.tableQuery = &qm
-		cmd8 = c
+
+	// Anything else goes to the top screen.
+	nt, cmd := top.Update(msg)
+	st.SetTop(nt)
+	return a, cmd
+}
+
+// drill maps a key to a screen-specific drill-in. It returns (cmd, true) when
+// the key is a drill key for the current top screen — even if the resulting
+// builder yields nil (no selection), so the key is consumed rather than falling
+// through to global navigation.
+func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
+	switch t := top.(type) {
+	case lambdaui.RootList:
+		if t.IsFiltering() {
+			return nil, false
+		}
+		switch msg.String() {
+		case "enter":
+			return a.push(t.OpenDetail(a.cfg)), true
+		case "i":
+			return a.push(t.OpenInvoke(a.cfg)), true
+		case "l":
+			return a.push(t.OpenLogs(a.cfg)), true
+		}
+	case lambdaui.Detailer:
+		switch msg.String() {
+		case "i":
+			return a.push(t.OpenInvoke(a.cfg)), true
+		case "l":
+			return a.push(t.OpenLogs(a.cfg)), true
+		}
+	case dynamoui.RootList:
+		if t.IsFiltering() {
+			return nil, false
+		}
+		if msg.String() == "enter" {
+			return a.push(t.OpenDescribe(a.cfg)), true
+		}
+	case dynamoui.Describer:
+		switch msg.String() {
+		case "s":
+			return a.push(t.OpenScan(a.cfg)), true
+		case "Q":
+			return a.push(t.OpenQuery(a.cfg)), true
+		}
+	case dynamoui.Scanner:
+		if msg.String() == "enter" {
+			return a.push(t.OpenItem(a.cfg)), true
+		}
+	case dynamoui.Querier:
+		if msg.String() == "o" && !t.InputFocused() {
+			return a.push(t.OpenResult(a.cfg)), true
+		}
 	}
-	if a.tableItem != nil {
-		iv, c := a.tableItem.Update(msg)
-		a.tableItem = &iv
-		cmd9 = c
-	}
-	return a, tea.Batch(cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9)
+	return nil, false
 }
 
 // View implements tea.Model.
@@ -549,46 +349,28 @@ func (a App) View() string {
 	}
 
 	header := a.theme.Title.Render("awsctl") + "  " + a.tabs.View()
-	body := ""
-	switch a.mode {
-	case ModeLambda:
-		if a.lambdaLogs != nil {
-			body = a.lambdaLogs.View()
-		} else if a.lambdaInvoke != nil {
-			body = a.lambdaInvoke.View()
-		} else if a.lambdaDetail != nil {
-			body = a.lambdaDetail.View()
-		} else {
-			body = a.lambdas.View()
-		}
-	case ModeDynamo:
-		if a.tableItem != nil {
-			body = a.tableItem.View()
-		} else if a.tableQuery != nil {
-			body = a.tableQuery.View()
-		} else if a.tableScan != nil {
-			body = a.tableScan.View()
-		} else if a.tableDescribe != nil {
-			body = a.tableDescribe.View()
-		} else {
-			body = a.tables.View()
-		}
+	if crumbs := a.crumbView(); crumbs != "" {
+		header += "  " + crumbs
 	}
 
+	body := a.active().Top().View()
 	w, h := a.contentSize()
 	mid := lipgloss.NewStyle().Width(w).Height(h).Render(body)
 	return header + "\n" + mid + "\n" + a.statusView()
 }
 
+// crumbView renders the active stack's breadcrumb trail, or "" at the root.
+func (a App) crumbView() string {
+	c := a.active().Crumbs()
+	if len(c) <= 1 {
+		return ""
+	}
+	return a.theme.Subtle.Render(strings.Join(c, " › "))
+}
+
 func (a App) statusView() string {
 	a.status.LastErr = a.lastErr
 	return a.status.View()
-}
-
-func placeholder(title, sub string) string {
-	t := lipgloss.NewStyle().Bold(true).Render(title)
-	s := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(sub)
-	return fmt.Sprintf("\n  %s\n  %s\n", t, s)
 }
 
 func centered(w, h int, s string) string {

@@ -28,3 +28,18 @@ type Screen interface {
 	// SetSize informs the screen of the available body dimensions.
 	SetSize(w, h int)
 }
+
+// InputCapturer is an optional Screen capability. When CapturesInput reports
+// true, the App forwards every key (except ctrl+c) straight to the screen and
+// suppresses global shortcuts — e.g. a text editor or an active filter, where
+// keys like "1"/"2"/"q" are literal input, not navigation.
+type InputCapturer interface {
+	CapturesInput() bool
+}
+
+// EscHandler is an optional Screen capability. When WantsEsc reports true, the
+// App forwards `esc` to the screen (to cancel an in-screen mode such as an
+// active filter) instead of popping the stack.
+type EscHandler interface {
+	WantsEsc() bool
+}
