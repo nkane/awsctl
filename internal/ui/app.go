@@ -382,6 +382,13 @@ func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 		if msg.String() == "enter" {
 			return a.push(t.OpenContainers(a.cfg)), true
 		}
+	case ecsui.ContainerList:
+		if t.IsFiltering() {
+			return nil, false
+		}
+		if msg.String() == "enter" {
+			return a.push(t.OpenLogs(a.cfg)), true
+		}
 	}
 	return nil, false
 }

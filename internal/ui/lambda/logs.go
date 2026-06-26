@@ -45,11 +45,15 @@ func tailTickCmd() tea.Cmd {
 	return tea.Tick(pollInterval, func(t time.Time) tea.Msg { return tailTickMsg(t) })
 }
 
-// LogsModel is the Lambda log tail screen.
+// LogsModel is a CloudWatch log tail screen. It is used for Lambda functions
+// (NewLogs) and, via NewLogsFor, for any log group + stream prefix — e.g. ECS
+// container logs. (Shared here for now; a neutral logsview package would be a
+// cleaner home if a third consumer appears.)
 type LogsModel struct {
-	client   *awsx.LogsClient
-	logGroup string
-	fnName   string
+	client       *awsx.LogsClient
+	logGroup     string
+	streamPrefix string
+	label        string
 
 	vp      viewport.Model
 	spinner spinner.Model
@@ -70,6 +74,17 @@ type LogsModel struct {
 
 // NewLogs constructs the tail screen for one function. Default 5-minute window.
 func NewLogs(client *awsx.LogsClient, fnName string) LogsModel {
+	return newLogsModel(client, fnName, awsx.LambdaLogGroup(fnName), "")
+}
+
+// NewLogsFor constructs a tail screen for an arbitrary log group, optionally
+// scoped to a log-stream prefix. Used for ECS container logs. Default 5-minute
+// window.
+func NewLogsFor(client *awsx.LogsClient, label, logGroup, streamPrefix string) LogsModel {
+	return newLogsModel(client, label, logGroup, streamPrefix)
+}
+
+func newLogsModel(client *awsx.LogsClient, label, logGroup, streamPrefix string) LogsModel {
 	vp := viewport.New(0, 0)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -78,13 +93,14 @@ func NewLogs(client *awsx.LogsClient, fnName string) LogsModel {
 	ti.CharLimit = 256
 
 	return LogsModel{
-		client:   client,
-		logGroup: awsx.LambdaLogGroup(fnName),
-		fnName:   fnName,
-		vp:       vp,
-		spinner:  sp,
-		filter:   ti,
-		follow:   true,
+		client:       client,
+		logGroup:     logGroup,
+		streamPrefix: streamPrefix,
+		label:        label,
+		vp:           vp,
+		spinner:      sp,
+		filter:       ti,
+		follow:       true,
 		// 5 min window
 		lastSeen: time.Now().Add(-5*time.Minute).UnixMilli() - 1,
 	}
@@ -113,10 +129,11 @@ func (m *LogsModel) SetSize(w, h int) {
 // fetch issues a Filter call from m.lastSeen forward.
 func (m LogsModel) fetch() tea.Cmd {
 	in := awsx.FilterInput{
-		LogGroup:      m.logGroup,
-		StartMillis:   m.lastSeen + 1,
-		Limit:         1000,
-		FilterPattern: m.pattern,
+		LogGroup:        m.logGroup,
+		StartMillis:     m.lastSeen + 1,
+		Limit:           1000,
+		FilterPattern:   m.pattern,
+		LogStreamPrefix: m.streamPrefix,
 	}
 	return tailFetchCmd(m.client, in)
 }
@@ -276,7 +293,7 @@ func (m LogsModel) View() string {
 	if m.loading {
 		loadingBit = "  " + m.spinner.View()
 	}
-	header := titleSty.Render("logs: "+m.fnName) + "  " +
+	header := titleSty.Render("logs: "+m.label) + "  " +
 		followBadge + statusSty.Render("  group="+m.logGroup) + patternBit + loadingBit
 
 	body := m.vp.View()

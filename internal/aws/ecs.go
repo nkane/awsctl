@@ -187,6 +187,56 @@ func taskSummary(tk ecstypes.Task) TaskSummary {
 	return s
 }
 
+// ContainerLogTarget locates a container's CloudWatch logs.
+type ContainerLogTarget struct {
+	LogGroup     string
+	StreamPrefix string // {prefix}/{container}/{taskId}
+}
+
+// ResolveContainerLog resolves the awslogs CloudWatch target for a container by
+// reading the task's definition. Errors if the container does not use the
+// awslogs log driver.
+func (c *EcsClient) ResolveContainerLog(ctx context.Context, cluster, task, container string) (*ContainerLogTarget, error) {
+	dt, err := c.api.DescribeTasks(ctx, &ecs.DescribeTasksInput{Cluster: &cluster, Tasks: []string{task}})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe task %q: %w", task, err)
+	}
+	if len(dt.Tasks) == 0 || dt.Tasks[0].TaskDefinitionArn == nil {
+		return nil, fmt.Errorf("ecs: task %q not found", task)
+	}
+	taskID := shortTaskDef(*dt.Tasks[0].TaskArn)
+	tdArn := *dt.Tasks[0].TaskDefinitionArn
+
+	dtd, err := c.api.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: &tdArn})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe task-definition: %w", err)
+	}
+	if dtd.TaskDefinition == nil {
+		return nil, fmt.Errorf("ecs: empty task-definition for %q", tdArn)
+	}
+
+	for _, cd := range dtd.TaskDefinition.ContainerDefinitions {
+		if cd.Name == nil || *cd.Name != container {
+			continue
+		}
+		lc := cd.LogConfiguration
+		if lc == nil || lc.LogDriver != ecstypes.LogDriverAwslogs {
+			return nil, fmt.Errorf("ecs: container %q does not use the awslogs driver", container)
+		}
+		group := lc.Options["awslogs-group"]
+		if group == "" {
+			return nil, fmt.Errorf("ecs: container %q has no awslogs-group", container)
+		}
+		prefix := lc.Options["awslogs-stream-prefix"]
+		stream := container + "/" + taskID
+		if prefix != "" {
+			stream = prefix + "/" + stream
+		}
+		return &ContainerLogTarget{LogGroup: group, StreamPrefix: stream}, nil
+	}
+	return nil, fmt.Errorf("ecs: container %q not found in task definition", container)
+}
+
 // ContainerSummary is the UI-facing view of a container within a task.
 type ContainerSummary struct {
 	Name       string

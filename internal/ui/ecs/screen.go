@@ -118,10 +118,12 @@ func (s *taskListScreen) OpenContainers(cfg *awsx.Config) core.Screen {
 	return nil
 }
 
-// ContainerList is a per-task container list (drill into logs lands in #54).
+// ContainerList is a per-task container list. enter drills into the selected
+// container's logs.
 type ContainerList interface {
 	core.Screen
 	IsFiltering() bool
+	OpenLogs(*awsx.Config) core.Screen
 }
 
 type containerListScreen struct{ m ContainerListModel }
@@ -139,6 +141,30 @@ func (s *containerListScreen) KeyHints() []key.Binding { return nil }
 func (s *containerListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
 func (s *containerListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
 func (s *containerListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+
+func (s *containerListScreen) OpenLogs(cfg *awsx.Config) core.Screen {
+	if name := s.m.Selected(); name != "" && cfg != nil {
+		return &containerLogsScreen{
+			m: NewContainerLogs(awsx.NewEcsClient(cfg), awsx.NewLogsClient(cfg), s.m.cluster, s.m.task, name),
+		}
+	}
+	return nil
+}
+
+type containerLogsScreen struct{ m ContainerLogsModel }
+
+func (s *containerLogsScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *containerLogsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *containerLogsScreen) View() string            { return s.m.View() }
+func (s *containerLogsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *containerLogsScreen) Title() string           { return "logs" }
+func (s *containerLogsScreen) KeyHints() []key.Binding { return nil }
+func (s *containerLogsScreen) CapturesInput() bool     { return true }                // tailing view owns keys
+func (s *containerLogsScreen) WantsEsc() bool          { return s.m.FilterFocused() } // esc clears filter, else pops
 
 type serviceDescribeScreen struct{ m ServiceDescribeModel }
 

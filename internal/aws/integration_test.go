@@ -3,12 +3,14 @@
 // Integration tests run against a LocalStack instance.
 //
 // Bring up LocalStack first:
-//   docker compose -f docker-compose.localstack.yml up -d
+//
+//	docker compose -f docker-compose.localstack.yml up -d
 //
 // Then run:
-//   AWSCTL_ENDPOINT_URL=http://localhost:4566 \
-//   AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
-//   go test -tags=integration ./internal/aws/...
+//
+//	AWSCTL_ENDPOINT_URL=http://localhost:4566 \
+//	AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
+//	go test -tags=integration ./internal/aws/...
 //
 // The default-skip behaviour means CI without docker still passes.
 package aws
