@@ -103,6 +103,38 @@ func (c *EcsClient) ListTaskDefFamilies(ctx context.Context) ([]TaskDefFamilySum
 	return out, nil
 }
 
+// TaskDefRevision is one active revision of a task-definition family.
+type TaskDefRevision struct {
+	Revision string
+	Arn      string
+}
+
+// ListTaskDefRevisions returns the active revisions of a single family,
+// newest-first. FamilyPrefix matching is a prefix, so results are filtered to
+// the exact family.
+func (c *EcsClient) ListTaskDefRevisions(ctx context.Context, family string) ([]TaskDefRevision, error) {
+	out := []TaskDefRevision{}
+	p := ecs.NewListTaskDefinitionsPaginator(c.api, &ecs.ListTaskDefinitionsInput{
+		FamilyPrefix: &family,
+		Sort:         ecstypes.SortOrderDesc,
+		Status:       ecstypes.TaskDefinitionStatusActive,
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("ecs: list task-def revisions %q: %w", family, err)
+		}
+		for _, arn := range page.TaskDefinitionArns {
+			fam, rev := parseTaskDefArn(arn)
+			if fam != family { // prefix match could include other families
+				continue
+			}
+			out = append(out, TaskDefRevision{Revision: rev, Arn: arn})
+		}
+	}
+	return out, nil
+}
+
 // DescribeTaskDef returns a task definition. Given a family name it resolves
 // the latest ACTIVE revision; a family:revision or ARN resolves that revision.
 func (c *EcsClient) DescribeTaskDef(ctx context.Context, familyOrArn string) (*ecstypes.TaskDefinition, error) {
