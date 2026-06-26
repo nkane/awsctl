@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
@@ -63,6 +64,52 @@ func (c *EcsClient) ListClusters(ctx context.Context) ([]ClusterSummary, error) 
 		}
 	}
 	return out, nil
+}
+
+// TaskDefFamilySummary is one task-definition family with its latest active
+// revision.
+type TaskDefFamilySummary struct {
+	Family   string
+	Revision string
+}
+
+// ListTaskDefFamilies returns active task-definition families with their latest
+// revision. It pages ListTaskDefinitions in descending order, so the first ARN
+// seen for a family is its latest revision.
+func (c *EcsClient) ListTaskDefFamilies(ctx context.Context) ([]TaskDefFamilySummary, error) {
+	seen := map[string]struct{}{}
+	out := []TaskDefFamilySummary{}
+	p := ecs.NewListTaskDefinitionsPaginator(c.api, &ecs.ListTaskDefinitionsInput{
+		Sort:   ecstypes.SortOrderDesc,
+		Status: ecstypes.TaskDefinitionStatusActive,
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("ecs: list task-definitions: %w", err)
+		}
+		for _, arn := range page.TaskDefinitionArns {
+			family, rev := parseTaskDefArn(arn)
+			if family == "" {
+				continue
+			}
+			if _, dup := seen[family]; dup {
+				continue
+			}
+			seen[family] = struct{}{}
+			out = append(out, TaskDefFamilySummary{Family: family, Revision: rev})
+		}
+	}
+	return out, nil
+}
+
+// parseTaskDefArn splits a task-definition ARN tail into family + revision.
+func parseTaskDefArn(arn string) (string, string) {
+	tail := shortTaskDef(arn) // family:revision
+	if i := strings.LastIndexByte(tail, ':'); i >= 0 {
+		return tail[:i], tail[i+1:]
+	}
+	return tail, ""
 }
 
 // DescribeCluster returns the full description of a single cluster, including

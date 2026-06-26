@@ -13,7 +13,8 @@ import (
 // land in follow-up tickets (#43+); for now this is the mode's root list.
 
 // RootList is the ECS mode's root screen (the cluster list). enter drills into
-// the cluster's services; 'd' opens the cluster describe.
+// the cluster's services; 'd' opens the cluster describe; 't' opens the
+// region's task-definition families.
 type RootList interface {
 	core.Screen
 	SetClient(*awsx.EcsClient)
@@ -21,6 +22,7 @@ type RootList interface {
 	IsFiltering() bool
 	OpenServices(*awsx.Config) core.Screen
 	OpenDescribe(*awsx.Config) core.Screen
+	OpenTaskDefs(*awsx.Config) core.Screen
 }
 
 type listScreen struct{ m ListModel }
@@ -57,6 +59,36 @@ func (s *listScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	}
 	return nil
 }
+
+func (s *listScreen) OpenTaskDefs(cfg *awsx.Config) core.Screen {
+	if cfg == nil {
+		return nil
+	}
+	return &taskDefListScreen{m: NewTaskDefList(awsx.NewEcsClient(cfg))}
+}
+
+// TaskDefList is the region's task-definition families list (drill into a
+// task-def describe lands in #51).
+type TaskDefList interface {
+	core.Screen
+	IsFiltering() bool
+}
+
+type taskDefListScreen struct{ m TaskDefListModel }
+
+func (s *taskDefListScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *taskDefListScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *taskDefListScreen) View() string            { return s.m.View() }
+func (s *taskDefListScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *taskDefListScreen) Title() string           { return "task-defs" }
+func (s *taskDefListScreen) KeyHints() []key.Binding { return nil }
+func (s *taskDefListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
+func (s *taskDefListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
+func (s *taskDefListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
 
 type clusterDescribeScreen struct{ m ClusterDescribeModel }
 

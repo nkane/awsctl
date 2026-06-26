@@ -379,6 +379,8 @@ func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 			return a.push(t.OpenServices(a.cfg)), true
 		case "d":
 			return a.push(t.OpenDescribe(a.cfg)), true
+		case "t":
+			return a.push(t.OpenTaskDefs(a.cfg)), true
 		}
 	case ecsui.ServiceList:
 		if t.IsFiltering() {
