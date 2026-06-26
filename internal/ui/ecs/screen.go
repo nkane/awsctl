@@ -119,11 +119,14 @@ func (s *taskListScreen) OpenContainers(cfg *awsx.Config) core.Screen {
 }
 
 // ContainerList is a per-task container list. enter drills into the selected
-// container's logs.
+// container's logs; 'x' execs into it.
 type ContainerList interface {
 	core.Screen
 	IsFiltering() bool
 	OpenLogs(*awsx.Config) core.Screen
+	// ExecTarget returns the cluster/task/container for the selected row.
+	// ok is false when nothing is selected.
+	ExecTarget() (cluster, task, container string, ok bool)
 }
 
 type containerListScreen struct{ m ContainerListModel }
@@ -149,6 +152,14 @@ func (s *containerListScreen) OpenLogs(cfg *awsx.Config) core.Screen {
 		}
 	}
 	return nil
+}
+
+func (s *containerListScreen) ExecTarget() (string, string, string, bool) {
+	name := s.m.Selected()
+	if name == "" {
+		return "", "", "", false
+	}
+	return s.m.cluster, s.m.task, name, true
 }
 
 type containerLogsScreen struct{ m ContainerLogsModel }

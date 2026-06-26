@@ -225,6 +225,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.active().Pop()
 		return a, nil
 
+	case execErrMsg:
+		a.lastErr = msg.err
+		return a, nil
+
+	case execDoneMsg:
+		if msg.err != nil {
+			a.lastErr = execErrText(msg.err)
+		} else {
+			a.lastErr = ""
+		}
+		return a, nil
+
 	case tea.KeyMsg:
 		// Picker owns input while open.
 		if a.mode == ModeProfile {
@@ -386,8 +398,14 @@ func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 		if t.IsFiltering() {
 			return nil, false
 		}
-		if msg.String() == "enter" {
+		switch msg.String() {
+		case "enter":
 			return a.push(t.OpenLogs(a.cfg)), true
+		case "x":
+			if cluster, task, container, ok := t.ExecTarget(); ok {
+				return a.ecsExecCmd(cluster, task, container), true
+			}
+			return nil, true
 		}
 	}
 	return nil, false
