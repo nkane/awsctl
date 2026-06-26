@@ -114,6 +114,22 @@ func (c *EcsClient) ListServices(ctx context.Context, cluster string) ([]Service
 	return out, nil
 }
 
+// DescribeService returns the full description of a single service, including
+// deployments, events, network config, and load balancers.
+func (c *EcsClient) DescribeService(ctx context.Context, cluster, name string) (*ecstypes.Service, error) {
+	resp, err := c.api.DescribeServices(ctx, &ecs.DescribeServicesInput{
+		Cluster:  &cluster,
+		Services: []string{name},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe service %q: %w", name, err)
+	}
+	if len(resp.Services) == 0 {
+		return nil, fmt.Errorf("ecs: service %q not found in cluster %q", name, cluster)
+	}
+	return &resp.Services[0], nil
+}
+
 func serviceSummary(svc ecstypes.Service) ServiceSummary {
 	s := ServiceSummary{
 		Desired:    svc.DesiredCount,

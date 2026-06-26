@@ -365,6 +365,13 @@ func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 		if msg.String() == "enter" {
 			return a.push(t.OpenServices(a.cfg)), true
 		}
+	case ecsui.ServiceList:
+		if t.IsFiltering() {
+			return nil, false
+		}
+		if msg.String() == "enter" {
+			return a.push(t.OpenDescribe(a.cfg)), true
+		}
 	}
 	return nil, false
 }

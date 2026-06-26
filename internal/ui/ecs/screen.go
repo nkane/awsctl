@@ -49,10 +49,12 @@ func (s *listScreen) OpenServices(cfg *awsx.Config) core.Screen {
 	return nil
 }
 
-// ServiceList is a per-cluster service list that can (later) drill into tasks.
+// ServiceList is a per-cluster service list that can drill into a service
+// describe (and, later, tasks).
 type ServiceList interface {
 	core.Screen
 	IsFiltering() bool
+	OpenDescribe(*awsx.Config) core.Screen
 }
 
 type serviceListScreen struct{ m ServiceListModel }
@@ -70,3 +72,23 @@ func (s *serviceListScreen) KeyHints() []key.Binding { return nil }
 func (s *serviceListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
 func (s *serviceListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
 func (s *serviceListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+
+func (s *serviceListScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
+	if name := s.m.Selected(); name != "" && cfg != nil {
+		return &serviceDescribeScreen{m: NewServiceDescribe(awsx.NewEcsClient(cfg), s.m.Cluster(), name)}
+	}
+	return nil
+}
+
+type serviceDescribeScreen struct{ m ServiceDescribeModel }
+
+func (s *serviceDescribeScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *serviceDescribeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *serviceDescribeScreen) View() string            { return s.m.View() }
+func (s *serviceDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *serviceDescribeScreen) Title() string           { return "describe" }
+func (s *serviceDescribeScreen) KeyHints() []key.Binding { return nil }
