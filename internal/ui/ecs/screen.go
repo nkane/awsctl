@@ -177,6 +177,12 @@ func (s *containerLogsScreen) KeyHints() []key.Binding { return nil }
 func (s *containerLogsScreen) CapturesInput() bool     { return true }                // tailing view owns keys
 func (s *containerLogsScreen) WantsEsc() bool          { return s.m.FilterFocused() } // esc clears filter, else pops
 
+// ServiceDescriber is a service describe screen that can open its events panel.
+type ServiceDescriber interface {
+	core.Screen
+	OpenEvents(*awsx.Config) core.Screen
+}
+
 type serviceDescribeScreen struct{ m ServiceDescribeModel }
 
 func (s *serviceDescribeScreen) Init() tea.Cmd { return s.m.Init() }
@@ -189,3 +195,23 @@ func (s *serviceDescribeScreen) View() string            { return s.m.View() }
 func (s *serviceDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
 func (s *serviceDescribeScreen) Title() string           { return "describe" }
 func (s *serviceDescribeScreen) KeyHints() []key.Binding { return nil }
+
+func (s *serviceDescribeScreen) OpenEvents(cfg *awsx.Config) core.Screen {
+	if cfg == nil || s.m.Name() == "" {
+		return nil
+	}
+	return &serviceEventsScreen{m: NewServiceEvents(awsx.NewEcsClient(cfg), s.m.Cluster(), s.m.Name())}
+}
+
+type serviceEventsScreen struct{ m ServiceEventsModel }
+
+func (s *serviceEventsScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *serviceEventsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *serviceEventsScreen) View() string            { return s.m.View() }
+func (s *serviceEventsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *serviceEventsScreen) Title() string           { return "events" }
+func (s *serviceEventsScreen) KeyHints() []key.Binding { return nil }

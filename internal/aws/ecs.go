@@ -304,6 +304,32 @@ func (c *EcsClient) DescribeService(ctx context.Context, cluster, name string) (
 	return &resp.Services[0], nil
 }
 
+// EventSummary is a single service event, newest-first when listed.
+type EventSummary struct {
+	CreatedAt string // formatted timestamp, or ""
+	Message   string
+}
+
+// ServiceEvents returns a service's events, newest-first.
+func (c *EcsClient) ServiceEvents(ctx context.Context, cluster, name string) ([]EventSummary, error) {
+	svc, err := c.DescribeService(ctx, cluster, name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]EventSummary, 0, len(svc.Events))
+	for _, e := range svc.Events {
+		es := EventSummary{}
+		if e.CreatedAt != nil {
+			es.CreatedAt = e.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+		if e.Message != nil {
+			es.Message = *e.Message
+		}
+		out = append(out, es)
+	}
+	return out, nil
+}
+
 func serviceSummary(svc ecstypes.Service) ServiceSummary {
 	s := ServiceSummary{
 		Desired:    svc.DesiredCount,

@@ -82,6 +82,9 @@ func (m ServiceDescribeModel) Init() tea.Cmd {
 // Name returns the service name.
 func (m ServiceDescribeModel) Name() string { return m.name }
 
+// Cluster returns the owning cluster name.
+func (m ServiceDescribeModel) Cluster() string { return m.cluster }
+
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *ServiceDescribeModel) SetSize(w, h int) {
 	m.width, m.height = w, h
