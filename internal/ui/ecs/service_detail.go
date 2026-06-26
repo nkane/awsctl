@@ -15,11 +15,22 @@ import (
 	awsx "github.com/nkane/awsctl/internal/aws"
 )
 
+// rolloutPollInterval controls how often the describe re-fetches while a
+// deployment is in progress.
+const rolloutPollInterval = 3 * time.Second
+
 // serviceDescribeLoadedMsg carries the result of DescribeService.
 type serviceDescribeLoadedMsg struct {
 	name string
 	svc  *ecstypes.Service
 	err  error
+}
+
+// rolloutTickMsg fires while watching an in-progress deployment.
+type rolloutTickMsg time.Time
+
+func rolloutTickCmd() tea.Cmd {
+	return tea.Tick(rolloutPollInterval, func(t time.Time) tea.Msg { return rolloutTickMsg(t) })
 }
 
 func loadServiceDescribeCmd(client *awsx.EcsClient, cluster, name string) tea.Cmd {
@@ -36,16 +47,17 @@ func loadServiceDescribeCmd(client *awsx.EcsClient, cluster, name string) tea.Cm
 
 // ServiceDescribeModel renders one service's full description.
 type ServiceDescribeModel struct {
-	client  *awsx.EcsClient
-	cluster string
-	name    string
-	svc     *ecstypes.Service
-	vp      viewport.Model
-	spinner spinner.Model
-	loading bool
-	err     string
-	width   int
-	height  int
+	client   *awsx.EcsClient
+	cluster  string
+	name     string
+	svc      *ecstypes.Service
+	vp       viewport.Model
+	spinner  spinner.Model
+	loading  bool
+	watching bool // auto-polling an in-progress rollout
+	err      string
+	width    int
+	height   int
 }
 
 // NewServiceDescribe constructs the describe screen; Init triggers the load.
@@ -99,8 +111,20 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 		m.err = ""
 		m.svc = msg.svc
 		m.vp.SetContent(renderService(msg.svc))
-		m.vp.GotoTop()
+		// Watch while the primary deployment is still rolling out; start the
+		// poll loop on the transition from not-watching to watching.
+		wasWatching := m.watching
+		m.watching = isRollingOut(msg.svc)
+		if m.watching && !wasWatching {
+			return m, rolloutTickCmd()
+		}
 		return m, nil
+
+	case rolloutTickMsg:
+		if !m.watching {
+			return m, nil // rollout finished; stop polling
+		}
+		return m, tea.Batch(loadServiceDescribeCmd(m.client, m.cluster, m.name), rolloutTickCmd())
 
 	case spinner.TickMsg:
 		if !m.loading {
@@ -126,6 +150,9 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 // View renders the describe screen.
 func (m ServiceDescribeModel) View() string {
 	title := lipgloss.NewStyle().Bold(true).Render("service: " + m.name)
+	if rl := rolloutLine(m.svc); rl != "" {
+		title += "  " + rl
+	}
 	body := m.vp.View()
 	if m.loading {
 		body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
@@ -133,7 +160,66 @@ func (m ServiceDescribeModel) View() string {
 		body = errStyle.Render("error: "+m.err) + "\n\n" + faint("press r to retry")
 	}
 	footer := faint("r refresh · esc back")
+	if m.watching {
+		footer = faint("● watching rollout · r refresh · esc back")
+	}
 	return title + "\n" + body + "\n" + footer
+}
+
+// primaryDeployment returns the service's PRIMARY deployment, or nil.
+func primaryDeployment(s *ecstypes.Service) *ecstypes.Deployment {
+	if s == nil {
+		return nil
+	}
+	for i := range s.Deployments {
+		if s.Deployments[i].Status != nil && *s.Deployments[i].Status == "PRIMARY" {
+			return &s.Deployments[i]
+		}
+	}
+	return nil
+}
+
+// isRollingOut reports whether the primary deployment is still in progress.
+func isRollingOut(s *ecstypes.Service) bool {
+	d := primaryDeployment(s)
+	return d != nil && d.RolloutState == ecstypes.DeploymentRolloutStateInProgress
+}
+
+// rolloutLine renders the primary deployment's state + a progress bar, or "".
+func rolloutLine(s *ecstypes.Service) string {
+	d := primaryDeployment(s)
+	if d == nil {
+		return ""
+	}
+	state := string(d.RolloutState)
+	col := lipgloss.Color("244")
+	switch d.RolloutState {
+	case ecstypes.DeploymentRolloutStateInProgress:
+		col = lipgloss.Color("214")
+	case ecstypes.DeploymentRolloutStateCompleted:
+		col = lipgloss.Color("42")
+	case ecstypes.DeploymentRolloutStateFailed:
+		col = lipgloss.Color("203")
+	}
+	badge := lipgloss.NewStyle().Foreground(col).Bold(true).Render(state)
+	return fmt.Sprintf("rollout %s %s %d/%d (pending %d)",
+		badge, rolloutBar(d.RunningCount, d.DesiredCount), d.RunningCount, d.DesiredCount, d.PendingCount)
+}
+
+// rolloutBar renders a 10-cell ASCII progress bar for running/desired.
+func rolloutBar(running, desired int32) string {
+	const width = 10
+	filled := width
+	if desired > 0 {
+		filled = int(float64(running) / float64(desired) * float64(width))
+		if filled > width {
+			filled = width
+		}
+		if filled < 0 {
+			filled = 0
+		}
+	}
+	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", width-filled) + "]"
 }
 
 // renderService formats a Service as a multi-section string for the viewport.
