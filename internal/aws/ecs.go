@@ -65,6 +65,91 @@ func (c *EcsClient) ListClusters(ctx context.Context) ([]ClusterSummary, error) 
 	return out, nil
 }
 
+// ServiceSummary is the UI-facing view of an ECS service.
+type ServiceSummary struct {
+	Name       string
+	Status     string
+	Desired    int32
+	Running    int32
+	Pending    int32
+	LaunchType string
+	TaskDef    string // family:revision
+	Rollout    string // primary deployment rollout state
+}
+
+// ListServices returns every service in a cluster with its deployment stats.
+// ListServices pages ARNs; DescribeServices is batched at 10 per call (the API
+// maximum).
+func (c *EcsClient) ListServices(ctx context.Context, cluster string) ([]ServiceSummary, error) {
+	arns := []string{}
+	p := ecs.NewListServicesPaginator(c.api, &ecs.ListServicesInput{Cluster: &cluster})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("ecs: list services %q: %w", cluster, err)
+		}
+		arns = append(arns, page.ServiceArns...)
+	}
+	if len(arns) == 0 {
+		return nil, nil
+	}
+
+	out := make([]ServiceSummary, 0, len(arns))
+	for start := 0; start < len(arns); start += 10 {
+		end := start + 10
+		if end > len(arns) {
+			end = len(arns)
+		}
+		resp, err := c.api.DescribeServices(ctx, &ecs.DescribeServicesInput{
+			Cluster:  &cluster,
+			Services: arns[start:end],
+		})
+		if err != nil {
+			return nil, fmt.Errorf("ecs: describe services %q: %w", cluster, err)
+		}
+		for _, svc := range resp.Services {
+			out = append(out, serviceSummary(svc))
+		}
+	}
+	return out, nil
+}
+
+func serviceSummary(svc ecstypes.Service) ServiceSummary {
+	s := ServiceSummary{
+		Desired:    svc.DesiredCount,
+		Running:    svc.RunningCount,
+		Pending:    svc.PendingCount,
+		LaunchType: string(svc.LaunchType),
+	}
+	if svc.ServiceName != nil {
+		s.Name = *svc.ServiceName
+	}
+	if svc.Status != nil {
+		s.Status = *svc.Status
+	}
+	if svc.TaskDefinition != nil {
+		s.TaskDef = shortTaskDef(*svc.TaskDefinition)
+	}
+	// The primary deployment carries the live rollout state.
+	for _, d := range svc.Deployments {
+		if d.Status != nil && *d.Status == "PRIMARY" {
+			s.Rollout = string(d.RolloutState)
+			break
+		}
+	}
+	return s
+}
+
+// shortTaskDef trims a task-definition ARN to its family:revision tail.
+func shortTaskDef(arn string) string {
+	for i := len(arn) - 1; i >= 0; i-- {
+		if arn[i] == '/' {
+			return arn[i+1:]
+		}
+	}
+	return arn
+}
+
 func clusterSummary(cl ecstypes.Cluster) ClusterSummary {
 	s := ClusterSummary{
 		RunningTasks:       cl.RunningTasksCount,
