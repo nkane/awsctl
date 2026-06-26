@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -61,7 +63,9 @@ type App struct {
 	keys   KeyMap
 	tabs   components.Tabs
 	status components.StatusBar
+	help   help.Model
 
+	showHelp bool
 	lastErr  string
 	quitting bool
 }
@@ -91,6 +95,7 @@ func NewApp(opts Options) App {
 		mode:   ModeLambda,
 		theme:  theme,
 		keys:   DefaultKeys(),
+		help:   help.New(),
 		lroot:  lroot,
 		droot:  droot,
 		eroot:  eroot,
@@ -171,6 +176,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
 		a.status.Width = msg.Width
+		a.help.Width = msg.Width
 		w, h := a.contentSize()
 		a.lstack.SetSize(w, h)
 		a.dstack.SetSize(w, h)
@@ -265,6 +271,15 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
+	// While the help overlay is open it owns input: esc/?/q close it.
+	if a.showHelp {
+		switch msg.String() {
+		case "?", "esc", "q":
+			a.showHelp = false
+		}
+		return a, nil
+	}
+
 	// Drill-in keys (screen-specific). Checked first so a screen can both edit
 	// text and expose a drill key when it is not currently focused.
 	if cmd, handled := a.drill(top, msg); handled {
@@ -307,6 +322,9 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, a.keys.Ecs):
 		a.mode = ModeEcs
 		a.tabs.Active = 2
+		return a, nil
+	case keyMatches(msg, a.keys.Help):
+		a.showHelp = true
 		return a, nil
 	case keyMatches(msg, a.keys.Profile):
 		a.prevMode = a.mode
@@ -459,10 +477,39 @@ func (a App) View() string {
 		header += "  " + crumbs
 	}
 
-	body := a.active().Top().View()
 	w, h := a.contentSize()
+	body := a.active().Top().View()
+	if a.showHelp {
+		body = a.helpView()
+	}
 	mid := lipgloss.NewStyle().Width(w).Height(h).Render(body)
-	return header + "\n" + mid + "\n" + a.statusView()
+	return header + "\n" + mid + "\n" + a.hintView() + "\n" + a.statusView()
+}
+
+// hintView renders the one-line short-help footer: the top screen's keys plus
+// the always-available globals.
+func (a App) hintView() string {
+	hints := append([]key.Binding{}, a.active().Top().KeyHints()...)
+	hints = append(hints, a.keys.Help, a.keys.Back, a.keys.Quit)
+	return a.help.ShortHelpView(hints)
+}
+
+// helpView renders the full help overlay grouped by screen / movement / global.
+func (a App) helpView() string {
+	help := a.help
+	help.ShowAll = true
+	groups := [][]key.Binding{
+		a.active().Top().KeyHints(),
+		{
+			core.Hint("j/k", "up/down"), core.Hint("g/G", "top/bottom"), core.Hint("/", "filter"),
+		},
+		{
+			a.keys.Lambda, a.keys.Dynamo, a.keys.Ecs, a.keys.Profile,
+			a.keys.Back, a.keys.Help, a.keys.Quit,
+		},
+	}
+	title := a.theme.Title.Render("Help") + "  " + a.theme.Subtle.Render("(esc to close)")
+	return title + "\n\n" + help.FullHelpView(groups)
 }
 
 // crumbView renders the active stack's breadcrumb trail, or "" at the root.

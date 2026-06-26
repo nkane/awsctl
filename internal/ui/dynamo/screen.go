@@ -54,10 +54,12 @@ func (s *listScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *listScreen) View() string                   { return s.m.View() }
-func (s *listScreen) SetSize(w, h int)               { s.m.SetSize(w, h) }
-func (s *listScreen) Title() string                  { return "tables" }
-func (s *listScreen) KeyHints() []key.Binding        { return nil }
+func (s *listScreen) View() string     { return s.m.View() }
+func (s *listScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *listScreen) Title() string    { return "tables" }
+func (s *listScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "describe"), core.Hint("s", "scan"), core.Hint("Q", "query")}
+}
 func (s *listScreen) SetClient(c *awsx.DynamoClient) { s.m.SetClient(c) }
 func (s *listScreen) Refresh() tea.Cmd               { return s.m.Refresh() }
 func (s *listScreen) IsFiltering() bool              { return s.m.IsFiltering() }
@@ -81,10 +83,12 @@ func (s *describeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *describeScreen) View() string            { return s.m.View() }
-func (s *describeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *describeScreen) Title() string           { return "describe" }
-func (s *describeScreen) KeyHints() []key.Binding { return nil }
+func (s *describeScreen) View() string     { return s.m.View() }
+func (s *describeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *describeScreen) Title() string    { return "describe" }
+func (s *describeScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("s", "scan"), core.Hint("Q", "query")}
+}
 
 func (s *describeScreen) OpenScan(cfg *awsx.Config) core.Screen {
 	if s.m.Name() != "" && cfg != nil {
@@ -109,10 +113,12 @@ func (s *scanScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *scanScreen) View() string            { return s.m.View() }
-func (s *scanScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *scanScreen) Title() string           { return "scan" }
-func (s *scanScreen) KeyHints() []key.Binding { return nil }
+func (s *scanScreen) View() string     { return s.m.View() }
+func (s *scanScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *scanScreen) Title() string    { return "scan" }
+func (s *scanScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "item"), core.Hint("n", "next page")}
+}
 
 func (s *scanScreen) OpenItem(cfg *awsx.Config) core.Screen {
 	it := s.m.Selected()
@@ -132,12 +138,14 @@ func (s *queryScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *queryScreen) View() string            { return s.m.View() }
-func (s *queryScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *queryScreen) Title() string           { return "query" }
-func (s *queryScreen) KeyHints() []key.Binding { return nil }
-func (s *queryScreen) InputFocused() bool      { return s.m.InputFocused() }
-func (s *queryScreen) CapturesInput() bool     { return s.m.InputFocused() } // key-condition editor
+func (s *queryScreen) View() string     { return s.m.View() }
+func (s *queryScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *queryScreen) Title() string    { return "query" }
+func (s *queryScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("o", "open item")}
+}
+func (s *queryScreen) InputFocused() bool  { return s.m.InputFocused() }
+func (s *queryScreen) CapturesInput() bool { return s.m.InputFocused() } // key-condition editor
 
 func (s *queryScreen) OpenResult(cfg *awsx.Config) core.Screen {
 	it := s.m.Selected()
@@ -157,8 +165,10 @@ func (s *itemScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *itemScreen) View() string            { return s.m.View() }
-func (s *itemScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *itemScreen) Title() string           { return "item" }
-func (s *itemScreen) KeyHints() []key.Binding { return nil }
-func (s *itemScreen) CapturesInput() bool     { return true } // scrollable detail owns keys
+func (s *itemScreen) View() string     { return s.m.View() }
+func (s *itemScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *itemScreen) Title() string    { return "item" }
+func (s *itemScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("y", "copy"), core.Hint("r", "refetch")}
+}
+func (s *itemScreen) CapturesInput() bool { return true } // scrollable detail owns keys
