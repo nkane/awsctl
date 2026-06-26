@@ -98,6 +98,9 @@ func (m *TaskListModel) SetSize(w, h int) {
 	m.list.SetSize(w, h)
 }
 
+// Cluster returns the owning cluster name.
+func (m TaskListModel) Cluster() string { return m.cluster }
+
 // Selected returns the highlighted task id, or "".
 func (m TaskListModel) Selected() string {
 	if it, ok := m.list.SelectedItem().(taskItem); ok {

@@ -187,6 +187,57 @@ func taskSummary(tk ecstypes.Task) TaskSummary {
 	return s
 }
 
+// ContainerSummary is the UI-facing view of a container within a task.
+type ContainerSummary struct {
+	Name       string
+	Image      string
+	LastStatus string
+	Health     string
+	ExitCode   string // "" when the container has not exited
+	Reason     string
+}
+
+// DescribeTaskContainers returns the containers of a single task. The task may
+// be given as an id or full ARN.
+func (c *EcsClient) DescribeTaskContainers(ctx context.Context, cluster, task string) ([]ContainerSummary, error) {
+	resp, err := c.api.DescribeTasks(ctx, &ecs.DescribeTasksInput{
+		Cluster: &cluster,
+		Tasks:   []string{task},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe task %q: %w", task, err)
+	}
+	if len(resp.Tasks) == 0 {
+		return nil, fmt.Errorf("ecs: task %q not found in cluster %q", task, cluster)
+	}
+	cs := resp.Tasks[0].Containers
+	out := make([]ContainerSummary, 0, len(cs))
+	for _, ct := range cs {
+		out = append(out, containerSummary(ct))
+	}
+	return out, nil
+}
+
+func containerSummary(ct ecstypes.Container) ContainerSummary {
+	s := ContainerSummary{Health: string(ct.HealthStatus)}
+	if ct.Name != nil {
+		s.Name = *ct.Name
+	}
+	if ct.Image != nil {
+		s.Image = *ct.Image
+	}
+	if ct.LastStatus != nil {
+		s.LastStatus = *ct.LastStatus
+	}
+	if ct.ExitCode != nil {
+		s.ExitCode = fmt.Sprintf("%d", *ct.ExitCode)
+	}
+	if ct.Reason != nil {
+		s.Reason = *ct.Reason
+	}
+	return s
+}
+
 // DescribeService returns the full description of a single service, including
 // deployments, events, network config, and load balancers.
 func (c *EcsClient) DescribeService(ctx context.Context, cluster, name string) (*ecstypes.Service, error) {
