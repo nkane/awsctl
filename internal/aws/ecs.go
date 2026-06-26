@@ -65,6 +65,28 @@ func (c *EcsClient) ListClusters(ctx context.Context) ([]ClusterSummary, error) 
 	return out, nil
 }
 
+// DescribeCluster returns the full description of a single cluster, including
+// statistics, settings, capacity providers, and tags.
+func (c *EcsClient) DescribeCluster(ctx context.Context, name string) (*ecstypes.Cluster, error) {
+	resp, err := c.api.DescribeClusters(ctx, &ecs.DescribeClustersInput{
+		Clusters: []string{name},
+		Include: []ecstypes.ClusterField{
+			ecstypes.ClusterFieldStatistics,
+			ecstypes.ClusterFieldSettings,
+			ecstypes.ClusterFieldTags,
+			ecstypes.ClusterFieldAttachments,
+			ecstypes.ClusterFieldConfigurations,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ecs: describe cluster %q: %w", name, err)
+	}
+	if len(resp.Clusters) == 0 {
+		return nil, fmt.Errorf("ecs: cluster %q not found", name)
+	}
+	return &resp.Clusters[0], nil
+}
+
 // ServiceSummary is the UI-facing view of an ECS service.
 type ServiceSummary struct {
 	Name       string

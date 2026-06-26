@@ -12,13 +12,15 @@ import (
 // for the pointer-adapter rationale. Drill-ins (cluster -> services -> tasks)
 // land in follow-up tickets (#43+); for now this is the mode's root list.
 
-// RootList is the ECS mode's root screen (the cluster list).
+// RootList is the ECS mode's root screen (the cluster list). enter drills into
+// the cluster's services; 'd' opens the cluster describe.
 type RootList interface {
 	core.Screen
 	SetClient(*awsx.EcsClient)
 	Refresh() tea.Cmd
 	IsFiltering() bool
 	OpenServices(*awsx.Config) core.Screen
+	OpenDescribe(*awsx.Config) core.Screen
 }
 
 type listScreen struct{ m ListModel }
@@ -48,6 +50,26 @@ func (s *listScreen) OpenServices(cfg *awsx.Config) core.Screen {
 	}
 	return nil
 }
+
+func (s *listScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
+	if name := s.m.Selected(); name != "" && cfg != nil {
+		return &clusterDescribeScreen{m: NewClusterDescribe(awsx.NewEcsClient(cfg), name)}
+	}
+	return nil
+}
+
+type clusterDescribeScreen struct{ m ClusterDescribeModel }
+
+func (s *clusterDescribeScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *clusterDescribeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *clusterDescribeScreen) View() string            { return s.m.View() }
+func (s *clusterDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *clusterDescribeScreen) Title() string           { return "describe" }
+func (s *clusterDescribeScreen) KeyHints() []key.Binding { return nil }
 
 // ServiceList is a per-cluster service list. enter drills into the service's
 // tasks; 'd' opens the service describe.
