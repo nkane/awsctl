@@ -6,6 +6,7 @@ import "github.com/charmbracelet/bubbles/key"
 type KeyMap struct {
 	Lambda  key.Binding
 	Dynamo  key.Binding
+	Ecs     key.Binding
 	Profile key.Binding
 	Help    key.Binding
 	Quit    key.Binding
@@ -25,6 +26,7 @@ func DefaultKeys() KeyMap {
 	return KeyMap{
 		Lambda:  key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "lambda")),
 		Dynamo:  key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "dynamo")),
+		Ecs:     key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "ecs")),
 		Profile: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "profile")),
 		Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),

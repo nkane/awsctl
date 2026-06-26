@@ -13,6 +13,7 @@ import (
 	"github.com/nkane/awsctl/internal/ui/components"
 	"github.com/nkane/awsctl/internal/ui/core"
 	dynamoui "github.com/nkane/awsctl/internal/ui/dynamo"
+	ecsui "github.com/nkane/awsctl/internal/ui/ecs"
 	lambdaui "github.com/nkane/awsctl/internal/ui/lambda"
 	"github.com/nkane/awsctl/internal/ui/profile"
 )
@@ -23,6 +24,7 @@ type Mode int
 const (
 	ModeLambda Mode = iota
 	ModeDynamo
+	ModeEcs
 	ModeProfile
 )
 
@@ -47,8 +49,10 @@ type App struct {
 
 	lstack *core.Stack       // Lambda navigation stack
 	dstack *core.Stack       // Dynamo navigation stack
+	estack *core.Stack       // ECS navigation stack
 	lroot  lambdaui.RootList // == lstack bottom; kept for client seeding
 	droot  dynamoui.RootList // == dstack bottom; kept for client seeding
+	eroot  ecsui.RootList    // == estack bottom; kept for client seeding
 
 	width  int
 	height int
@@ -81,6 +85,7 @@ func NewApp(opts Options) App {
 	theme := NewTheme()
 	lroot := lambdaui.NewListScreen()
 	droot := dynamoui.NewListScreen()
+	eroot := ecsui.NewListScreen()
 	return App{
 		opts:   opts,
 		mode:   ModeLambda,
@@ -88,10 +93,12 @@ func NewApp(opts Options) App {
 		keys:   DefaultKeys(),
 		lroot:  lroot,
 		droot:  droot,
+		eroot:  eroot,
 		lstack: core.NewStack(lroot),
 		dstack: core.NewStack(droot),
+		estack: core.NewStack(eroot),
 		tabs: components.Tabs{
-			Items:    []string{"[1] Lambda", "[2] DynamoDB"},
+			Items:    []string{"[1] Lambda", "[2] DynamoDB", "[3] ECS"},
 			Active:   0,
 			Active1:  theme.TabActive,
 			Inactive: theme.TabInactiv,
@@ -131,11 +138,18 @@ func (a App) contentSize() (int, int) {
 }
 
 // active returns the navigation stack for the current mode.
-func (a App) active() *core.Stack {
-	if a.mode == ModeDynamo {
+func (a App) active() *core.Stack { return a.stackFor(a.mode) }
+
+// stackFor returns the navigation stack for the given mode.
+func (a App) stackFor(m Mode) *core.Stack {
+	switch m {
+	case ModeDynamo:
 		return a.dstack
+	case ModeEcs:
+		return a.estack
+	default:
+		return a.lstack
 	}
-	return a.lstack
 }
 
 // push pushes a screen onto the active stack, sizes it, and returns its Init
@@ -160,6 +174,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w, h := a.contentSize()
 		a.lstack.SetSize(w, h)
 		a.dstack.SetSize(w, h)
+		a.estack.SetSize(w, h)
 		if a.mode == ModeProfile {
 			var cmd tea.Cmd
 			a.picker, cmd = a.picker.Update(msg)
@@ -182,14 +197,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// dropping any drill-down that belonged to the previous profile/region.
 		a.lroot = lambdaui.NewListScreen()
 		a.droot = dynamoui.NewListScreen()
+		a.eroot = ecsui.NewListScreen()
 		a.lstack = core.NewStack(a.lroot)
 		a.dstack = core.NewStack(a.droot)
+		a.estack = core.NewStack(a.eroot)
 		w, h := a.contentSize()
 		a.lstack.SetSize(w, h)
 		a.dstack.SetSize(w, h)
+		a.estack.SetSize(w, h)
 		a.lroot.SetClient(awsx.NewLambdaClient(msg.cfg))
 		a.droot.SetClient(awsx.NewDynamoClient(msg.cfg))
-		return a, tea.Batch(a.lroot.Refresh(), a.droot.Refresh())
+		a.eroot.SetClient(awsx.NewEcsClient(msg.cfg))
+		return a, tea.Batch(a.lroot.Refresh(), a.droot.Refresh(), a.eroot.Refresh())
 
 	case profile.Selected:
 		a.mode = a.prevMode
@@ -218,7 +237,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Non-key async messages (spinner ticks, data-loaded) go to every screen in
 	// both stacks so a background fetch completes regardless of what is on top.
-	return a, tea.Batch(a.lstack.Broadcast(msg), a.dstack.Broadcast(msg))
+	return a, tea.Batch(a.lstack.Broadcast(msg), a.dstack.Broadcast(msg), a.estack.Broadcast(msg))
 }
 
 // handleKey routes a key press: ctrl+c quits, screen-specific drill keys push a
@@ -272,6 +291,10 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, a.keys.Dynamo):
 		a.mode = ModeDynamo
 		a.tabs.Active = 1
+		return a, nil
+	case keyMatches(msg, a.keys.Ecs):
+		a.mode = ModeEcs
+		a.tabs.Active = 2
 		return a, nil
 	case keyMatches(msg, a.keys.Profile):
 		a.prevMode = a.mode
