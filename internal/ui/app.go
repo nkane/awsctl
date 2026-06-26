@@ -327,6 +327,13 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // the key is a drill key for the current top screen — even if the resulting
 // builder yields nil (no selection), so the key is consumed rather than falling
 // through to global navigation.
+//
+// ORDER-SENSITIVE: the drill interfaces are structural, and a screen can satisfy
+// more than one (e.g. the cluster and service lists both expose IsFiltering +
+// OpenDescribe, which also fully satisfies TaskDefList). A type switch dispatches
+// on the FIRST matching case, so the more specific list interfaces (RootList,
+// ServiceList) MUST precede TaskDefList. Reordering these cases can silently
+// change which drill a key triggers — the ecs drill tests guard the mapping.
 func (a App) drill(top core.Screen, msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch t := top.(type) {
 	case lambdaui.RootList:
