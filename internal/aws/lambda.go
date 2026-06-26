@@ -66,15 +66,15 @@ func (c *LambdaClient) GetFunction(ctx context.Context, name string) (*lambda.Ge
 // function. Each subfield may be nil/empty if the corresponding API call
 // failed or returned nothing — the UI renders "(none)" or skips the tab.
 type FunctionDetail struct {
-	Function       *lambda.GetFunctionOutput
-	Concurrency    *lambda.GetFunctionConcurrencyOutput
-	Tags           map[string]string
-	Aliases        []types.AliasConfiguration
-	Versions       []types.FunctionConfiguration
-	EventSources   []types.EventSourceMappingConfiguration
-	URLConfigs     []types.FunctionUrlConfig
-	Policy         string // raw resource policy JSON, "" if none
-	CodeSigning    *lambda.GetFunctionCodeSigningConfigOutput
+	Function     *lambda.GetFunctionOutput
+	Concurrency  *lambda.GetFunctionConcurrencyOutput
+	Tags         map[string]string
+	Aliases      []types.AliasConfiguration
+	Versions     []types.FunctionConfiguration
+	EventSources []types.EventSourceMappingConfiguration
+	URLConfigs   []types.FunctionUrlConfig
+	Policy       string // raw resource policy JSON, "" if none
+	CodeSigning  *lambda.GetFunctionCodeSigningConfigOutput
 	// Errors collects per-call failures so the UI can show partial data
 	// instead of failing the whole detail load.
 	Errors map[string]string
