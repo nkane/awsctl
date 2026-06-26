@@ -67,6 +67,14 @@ func (m TaskDefDescribeModel) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, loadTaskDefDescribeCmd(m.client, m.family))
 }
 
+// Family returns the task-definition family (without any revision suffix).
+func (m TaskDefDescribeModel) Family() string {
+	if i := strings.IndexByte(m.family, ':'); i >= 0 {
+		return m.family[:i]
+	}
+	return m.family
+}
+
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *TaskDefDescribeModel) SetSize(w, h int) {
 	m.width, m.height = w, h

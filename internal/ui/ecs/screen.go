@@ -98,6 +98,12 @@ func (s *taskDefListScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	return nil
 }
 
+// TaskDefDescriber is a task-def describe that can open its revision history.
+type TaskDefDescriber interface {
+	core.Screen
+	OpenRevisions(*awsx.Config) core.Screen
+}
+
 type taskDefDescribeScreen struct{ m TaskDefDescribeModel }
 
 func (s *taskDefDescribeScreen) Init() tea.Cmd { return s.m.Init() }
@@ -110,6 +116,45 @@ func (s *taskDefDescribeScreen) View() string            { return s.m.View() }
 func (s *taskDefDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
 func (s *taskDefDescribeScreen) Title() string           { return "describe" }
 func (s *taskDefDescribeScreen) KeyHints() []key.Binding { return nil }
+
+func (s *taskDefDescribeScreen) OpenRevisions(cfg *awsx.Config) core.Screen {
+	if cfg == nil {
+		return nil
+	}
+	return &taskDefRevisionsScreen{m: NewTaskDefRevisions(awsx.NewEcsClient(cfg), s.m.Family())}
+}
+
+// RevisionList is a task-def family's revision history. enter opens the
+// describe for the selected revision.
+type RevisionList interface {
+	core.Screen
+	IsFiltering() bool
+	OpenRevision(*awsx.Config) core.Screen
+}
+
+type taskDefRevisionsScreen struct{ m TaskDefRevisionsModel }
+
+func (s *taskDefRevisionsScreen) Init() tea.Cmd { return s.m.Init() }
+func (s *taskDefRevisionsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
+	nm, cmd := s.m.Update(msg)
+	s.m = nm
+	return s, cmd
+}
+func (s *taskDefRevisionsScreen) View() string            { return s.m.View() }
+func (s *taskDefRevisionsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
+func (s *taskDefRevisionsScreen) Title() string           { return "revisions" }
+func (s *taskDefRevisionsScreen) KeyHints() []key.Binding { return nil }
+func (s *taskDefRevisionsScreen) IsFiltering() bool       { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) CapturesInput() bool     { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+
+func (s *taskDefRevisionsScreen) OpenRevision(cfg *awsx.Config) core.Screen {
+	if rev := s.m.Selected(); rev != "" && cfg != nil {
+		ref := s.m.Family() + ":" + rev
+		return &taskDefDescribeScreen{m: NewTaskDefDescribe(awsx.NewEcsClient(cfg), ref)}
+	}
+	return nil
+}
 
 type clusterDescribeScreen struct{ m ClusterDescribeModel }
 
