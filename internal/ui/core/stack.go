@@ -1,4 +1,4 @@
-package ui
+package core
 
 // Stack is a LIFO of Screens — the navigation history for one mode.
 //
