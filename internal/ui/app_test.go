@@ -51,6 +51,30 @@ func TestModeSwitchWiring(t *testing.T) {
 	}
 }
 
+// TestHelpToggle verifies '?' opens the full-help overlay and esc closes it,
+// and that the short-help footer surfaces the active screen's drill keys.
+func TestHelpToggle(t *testing.T) {
+	m := newTestApp()
+
+	// Footer should advertise the lambda root's drill keys.
+	if v := m.(App).View(); !strings.Contains(v, "detail") || !strings.Contains(v, "invoke") {
+		t.Fatalf("short-help footer missing lambda drill keys; view:\n%s", v)
+	}
+
+	m, _ = m.Update(runes("?"))
+	if !m.(App).showHelp {
+		t.Fatal("'?' should open the help overlay")
+	}
+	if v := m.(App).View(); !strings.Contains(v, "Help") {
+		t.Fatalf("help overlay not rendered; view:\n%s", v)
+	}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.(App).showHelp {
+		t.Fatal("esc should close the help overlay")
+	}
+}
+
 // TestEcsTabRendered checks the ECS tab is present in the header chrome.
 func TestEcsTabRendered(t *testing.T) {
 	m := newTestApp()

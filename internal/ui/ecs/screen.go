@@ -36,10 +36,12 @@ func (s *listScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *listScreen) View() string                { return s.m.View() }
-func (s *listScreen) SetSize(w, h int)            { s.m.SetSize(w, h) }
-func (s *listScreen) Title() string               { return "clusters" }
-func (s *listScreen) KeyHints() []key.Binding     { return nil }
+func (s *listScreen) View() string     { return s.m.View() }
+func (s *listScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *listScreen) Title() string    { return "clusters" }
+func (s *listScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "services"), core.Hint("d", "describe"), core.Hint("t", "task-defs")}
+}
 func (s *listScreen) SetClient(c *awsx.EcsClient) { s.m.SetClient(c) }
 func (s *listScreen) Refresh() tea.Cmd            { return s.m.Refresh() }
 func (s *listScreen) IsFiltering() bool           { return s.m.IsFiltering() }
@@ -83,13 +85,15 @@ func (s *taskDefListScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *taskDefListScreen) View() string            { return s.m.View() }
-func (s *taskDefListScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *taskDefListScreen) Title() string           { return "task-defs" }
-func (s *taskDefListScreen) KeyHints() []key.Binding { return nil }
-func (s *taskDefListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
-func (s *taskDefListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
-func (s *taskDefListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+func (s *taskDefListScreen) View() string     { return s.m.View() }
+func (s *taskDefListScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *taskDefListScreen) Title() string    { return "task-defs" }
+func (s *taskDefListScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "describe")}
+}
+func (s *taskDefListScreen) IsFiltering() bool   { return s.m.IsFiltering() }
+func (s *taskDefListScreen) CapturesInput() bool { return s.m.IsFiltering() }
+func (s *taskDefListScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *taskDefListScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	if family := s.m.Selected(); family != "" && cfg != nil {
@@ -112,10 +116,12 @@ func (s *taskDefDescribeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *taskDefDescribeScreen) View() string            { return s.m.View() }
-func (s *taskDefDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *taskDefDescribeScreen) Title() string           { return "describe" }
-func (s *taskDefDescribeScreen) KeyHints() []key.Binding { return nil }
+func (s *taskDefDescribeScreen) View() string     { return s.m.View() }
+func (s *taskDefDescribeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *taskDefDescribeScreen) Title() string    { return "describe" }
+func (s *taskDefDescribeScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("v", "revisions"), core.Hint("J", "json"), core.Hint("r", "refresh")}
+}
 
 func (s *taskDefDescribeScreen) OpenRevisions(cfg *awsx.Config) core.Screen {
 	if cfg == nil {
@@ -140,13 +146,15 @@ func (s *taskDefRevisionsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *taskDefRevisionsScreen) View() string            { return s.m.View() }
-func (s *taskDefRevisionsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *taskDefRevisionsScreen) Title() string           { return "revisions" }
-func (s *taskDefRevisionsScreen) KeyHints() []key.Binding { return nil }
-func (s *taskDefRevisionsScreen) IsFiltering() bool       { return s.m.IsFiltering() }
-func (s *taskDefRevisionsScreen) CapturesInput() bool     { return s.m.IsFiltering() }
-func (s *taskDefRevisionsScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) View() string     { return s.m.View() }
+func (s *taskDefRevisionsScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *taskDefRevisionsScreen) Title() string    { return "revisions" }
+func (s *taskDefRevisionsScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "describe")}
+}
+func (s *taskDefRevisionsScreen) IsFiltering() bool   { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) CapturesInput() bool { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *taskDefRevisionsScreen) OpenRevision(cfg *awsx.Config) core.Screen {
 	if rev := s.m.Selected(); rev != "" && cfg != nil {
@@ -164,10 +172,12 @@ func (s *clusterDescribeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *clusterDescribeScreen) View() string            { return s.m.View() }
-func (s *clusterDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *clusterDescribeScreen) Title() string           { return "describe" }
-func (s *clusterDescribeScreen) KeyHints() []key.Binding { return nil }
+func (s *clusterDescribeScreen) View() string     { return s.m.View() }
+func (s *clusterDescribeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *clusterDescribeScreen) Title() string    { return "describe" }
+func (s *clusterDescribeScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("r", "refresh")}
+}
 
 // ServiceList is a per-cluster service list. enter drills into the service's
 // tasks; 'd' opens the service describe.
@@ -186,13 +196,15 @@ func (s *serviceListScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *serviceListScreen) View() string            { return s.m.View() }
-func (s *serviceListScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *serviceListScreen) Title() string           { return "services" }
-func (s *serviceListScreen) KeyHints() []key.Binding { return nil }
-func (s *serviceListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
-func (s *serviceListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
-func (s *serviceListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+func (s *serviceListScreen) View() string     { return s.m.View() }
+func (s *serviceListScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *serviceListScreen) Title() string    { return "services" }
+func (s *serviceListScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "tasks"), core.Hint("d", "describe")}
+}
+func (s *serviceListScreen) IsFiltering() bool   { return s.m.IsFiltering() }
+func (s *serviceListScreen) CapturesInput() bool { return s.m.IsFiltering() }
+func (s *serviceListScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *serviceListScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	if name := s.m.Selected(); name != "" && cfg != nil {
@@ -223,13 +235,15 @@ func (s *taskListScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *taskListScreen) View() string            { return s.m.View() }
-func (s *taskListScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *taskListScreen) Title() string           { return "tasks" }
-func (s *taskListScreen) KeyHints() []key.Binding { return nil }
-func (s *taskListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
-func (s *taskListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
-func (s *taskListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+func (s *taskListScreen) View() string     { return s.m.View() }
+func (s *taskListScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *taskListScreen) Title() string    { return "tasks" }
+func (s *taskListScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "containers")}
+}
+func (s *taskListScreen) IsFiltering() bool   { return s.m.IsFiltering() }
+func (s *taskListScreen) CapturesInput() bool { return s.m.IsFiltering() }
+func (s *taskListScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *taskListScreen) OpenContainers(cfg *awsx.Config) core.Screen {
 	if id := s.m.Selected(); id != "" && cfg != nil {
@@ -257,13 +271,15 @@ func (s *containerListScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *containerListScreen) View() string            { return s.m.View() }
-func (s *containerListScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *containerListScreen) Title() string           { return "containers" }
-func (s *containerListScreen) KeyHints() []key.Binding { return nil }
-func (s *containerListScreen) IsFiltering() bool       { return s.m.IsFiltering() }
-func (s *containerListScreen) CapturesInput() bool     { return s.m.IsFiltering() }
-func (s *containerListScreen) WantsEsc() bool          { return s.m.IsFiltering() }
+func (s *containerListScreen) View() string     { return s.m.View() }
+func (s *containerListScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *containerListScreen) Title() string    { return "containers" }
+func (s *containerListScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("enter", "logs"), core.Hint("x", "exec")}
+}
+func (s *containerListScreen) IsFiltering() bool   { return s.m.IsFiltering() }
+func (s *containerListScreen) CapturesInput() bool { return s.m.IsFiltering() }
+func (s *containerListScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *containerListScreen) OpenLogs(cfg *awsx.Config) core.Screen {
 	if name := s.m.Selected(); name != "" && cfg != nil {
@@ -290,12 +306,14 @@ func (s *containerLogsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *containerLogsScreen) View() string            { return s.m.View() }
-func (s *containerLogsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *containerLogsScreen) Title() string           { return "logs" }
-func (s *containerLogsScreen) KeyHints() []key.Binding { return nil }
-func (s *containerLogsScreen) CapturesInput() bool     { return true }                // tailing view owns keys
-func (s *containerLogsScreen) WantsEsc() bool          { return s.m.FilterFocused() } // esc clears filter, else pops
+func (s *containerLogsScreen) View() string     { return s.m.View() }
+func (s *containerLogsScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *containerLogsScreen) Title() string    { return "logs" }
+func (s *containerLogsScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("f", "follow"), core.Hint("/", "filter"), core.Hint("c", "clear")}
+}
+func (s *containerLogsScreen) CapturesInput() bool { return true }                // tailing view owns keys
+func (s *containerLogsScreen) WantsEsc() bool      { return s.m.FilterFocused() } // esc clears filter, else pops
 
 // ServiceDescriber is a service describe screen that can open its events panel.
 type ServiceDescriber interface {
@@ -311,10 +329,12 @@ func (s *serviceDescribeScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *serviceDescribeScreen) View() string            { return s.m.View() }
-func (s *serviceDescribeScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *serviceDescribeScreen) Title() string           { return "describe" }
-func (s *serviceDescribeScreen) KeyHints() []key.Binding { return nil }
+func (s *serviceDescribeScreen) View() string     { return s.m.View() }
+func (s *serviceDescribeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *serviceDescribeScreen) Title() string    { return "describe" }
+func (s *serviceDescribeScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("e", "events"), core.Hint("r", "refresh")}
+}
 
 func (s *serviceDescribeScreen) OpenEvents(cfg *awsx.Config) core.Screen {
 	if cfg == nil || s.m.Name() == "" {
@@ -331,7 +351,9 @@ func (s *serviceEventsScreen) Update(msg tea.Msg) (core.Screen, tea.Cmd) {
 	s.m = nm
 	return s, cmd
 }
-func (s *serviceEventsScreen) View() string            { return s.m.View() }
-func (s *serviceEventsScreen) SetSize(w, h int)        { s.m.SetSize(w, h) }
-func (s *serviceEventsScreen) Title() string           { return "events" }
-func (s *serviceEventsScreen) KeyHints() []key.Binding { return nil }
+func (s *serviceEventsScreen) View() string     { return s.m.View() }
+func (s *serviceEventsScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
+func (s *serviceEventsScreen) Title() string    { return "events" }
+func (s *serviceEventsScreen) KeyHints() []key.Binding {
+	return []key.Binding{core.Hint("r", "refresh")}
+}
