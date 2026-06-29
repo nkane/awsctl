@@ -4,7 +4,7 @@
 > scope, milestone status, and what's next. Doubles as the input plan for the
 > `build-with-agent-team` skill (see the Validation section).
 >
-> Last synced: 2026-06-29 — `main` @ `--version` ldflags (#24) merged.
+> Last synced: 2026-06-29 — M2 metrics implemented on `feat/m2-metrics` (PR #80, CI green).
 
 ## Vision
 
@@ -49,10 +49,10 @@ Base list / detail / invoke / logs ship today. Open polish:
 - 🔲 List: column view (#15), state badge (#16), multi-region scan (#17)
 - 🔲 Logs: time-window picker (#18)
 
-### M2 — Metrics as charts (not started)
-- 🔲 CloudWatch `GetMetricData` client (#64)
-- 🔲 Reusable ntcharts chart component (#65), time-range selector (#66)
-- 🔲 Lambda detail metrics (#1, #67), Dynamo metrics (#68), ECS metrics (#69)
+### M2 — Metrics as charts (delivered on feat/m2-metrics, PR #80)
+- ✅ CloudWatch `GetMetricData` client (#64)
+- ✅ Reusable ntcharts chart component (#65), time-range selector (#66)
+- ✅ Lambda detail metrics (#1, #67), Dynamo metrics (#68), ECS metrics (#69)
 
 ### M3 — DynamoDB (core done)
 - ✅ list + describe (#2), scan + query (#3), item view (#4)
@@ -77,7 +77,8 @@ Base list / detail / invoke / logs ship today. Open polish:
 - ✅ task list (#48), describe (#49), container list (#50)
 - ✅ task-def list (#51), describe (#52), revision history + diff (#53)
 - ✅ container log tail (#54), ECS Exec (#55), rollout watch (#56)
-- 🔲 breadcrumb nav polish (#61), multi-cluster/region scan (#62), ECS metrics (#69)
+- ✅ ECS metrics (#69, via M2)
+- 🔲 breadcrumb nav polish (#61), multi-cluster/region scan (#62)
 
 ### Cross-cutting UI
 - ✅ k9s nav-stack refactor (#63), help overlay (#19)
@@ -95,8 +96,9 @@ provenance (`--version`) and integration CI are in place.
 1. **#40 confirm modal + audit log** — keystone that unblocks all M6 writes.
 2. **#30 release workflow** finish → cut first tagged release (now that #24 lands).
 3. **#43 / #41 cleanup** — close the stale-open ECS tickets already delivered.
-4. **M2 metrics** (#64 → #65/#66 → per-service charts) — high user value, self-contained.
-5. **UI polish** (#21 persist profile/region, #23 pagination, #20 error modal).
+4. **UI polish** (#21 persist profile/region, #23 pagination, #20 error modal).
+
+> M2 metrics (#64–#69) done — PR #80, pending merge.
 
 ## Validation (per layer)
 
