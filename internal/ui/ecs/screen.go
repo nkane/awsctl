@@ -150,13 +150,19 @@ func (s *taskDefRevisionsScreen) View() string     { return s.m.View() }
 func (s *taskDefRevisionsScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *taskDefRevisionsScreen) Title() string    { return "revisions" }
 func (s *taskDefRevisionsScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("enter", "describe")}
+	return []key.Binding{core.Hint("enter", "describe"), core.Hint("d", "diff")}
 }
-func (s *taskDefRevisionsScreen) IsFiltering() bool   { return s.m.IsFiltering() }
-func (s *taskDefRevisionsScreen) CapturesInput() bool { return s.m.IsFiltering() }
-func (s *taskDefRevisionsScreen) WantsEsc() bool      { return s.m.IsFiltering() }
+func (s *taskDefRevisionsScreen) IsFiltering() bool { return s.m.IsFiltering() }
+
+// CapturesInput / WantsEsc also hold while the diff overlay is open so the
+// viewport owns scroll keys and esc closes the overlay instead of popping.
+func (s *taskDefRevisionsScreen) CapturesInput() bool { return s.m.IsFiltering() || s.m.Diffing() }
+func (s *taskDefRevisionsScreen) WantsEsc() bool      { return s.m.IsFiltering() || s.m.Diffing() }
 
 func (s *taskDefRevisionsScreen) OpenRevision(cfg *awsx.Config) core.Screen {
+	if s.m.Diffing() {
+		return nil // diff overlay owns enter; don't drill into a describe
+	}
 	if rev := s.m.Selected(); rev != "" && cfg != nil {
 		ref := s.m.Family() + ":" + rev
 		return &taskDefDescribeScreen{m: NewTaskDefDescribe(awsx.NewEcsClient(cfg), ref)}
