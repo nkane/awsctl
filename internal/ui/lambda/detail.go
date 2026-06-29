@@ -53,31 +53,34 @@ const (
 	TabVPC
 	TabURLs
 	TabTags
+	TabMetrics
 )
 
 var detailTabNames = []string{
 	"Configuration", "Code", "Environment", "Triggers",
 	"Permissions", "Concurrency", "Aliases", "Versions",
-	"Layers", "VPC", "URL", "Tags",
+	"Layers", "VPC", "URL", "Tags", "Metrics",
 }
 
 // DetailModel is the per-function detail screen with sub-tabs.
 type DetailModel struct {
-	client    *awsx.LambdaClient
-	name      string
-	tab       DetailTab
-	detail    *awsx.FunctionDetail
-	loading   bool
-	err       string
-	width     int
-	height    int
-	spinner   spinner.Model
-	vp        viewport.Model
-	maskEnv   bool // start masked; toggle with 'e'
+	client  *awsx.LambdaClient
+	name    string
+	tab     DetailTab
+	detail  *awsx.FunctionDetail
+	loading bool
+	err     string
+	width   int
+	height  int
+	spinner spinner.Model
+	vp      viewport.Model
+	maskEnv bool // start masked; toggle with 'e'
+	metrics metricsPanel
 }
 
-// NewDetail constructs a detail screen for the given function name.
-func NewDetail(client *awsx.LambdaClient, name string) DetailModel {
+// NewDetail constructs a detail screen for the given function name. cfg is used
+// to build the CloudWatch client for the Metrics tab.
+func NewDetail(client *awsx.LambdaClient, cfg *awsx.Config, name string) DetailModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	vp := viewport.New(0, 0)
@@ -88,6 +91,7 @@ func NewDetail(client *awsx.LambdaClient, name string) DetailModel {
 		vp:      vp,
 		loading: true,
 		maskEnv: true,
+		metrics: newMetricsPanel(cfg, lambdaMetricSpecs(name)),
 	}
 }
 
@@ -105,6 +109,13 @@ func (m *DetailModel) SetSize(w, h int) {
 	}
 	m.vp.Width = w
 	m.vp.Height = innerH
+	// The metrics tab renders its own selector line in place of the viewport;
+	// reserve one line for that selector.
+	mh := innerH - 1
+	if mh < 4 {
+		mh = 4
+	}
+	m.metrics.SetSize(w, mh)
 	if m.detail != nil {
 		m.vp.SetContent(m.renderTabBody())
 	}
@@ -130,26 +141,35 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		m.vp.GotoTop()
 		return m, nil
 
+	case metricsLoadedMsg:
+		return m, m.metrics.Update(msg)
+
 	case spinner.TickMsg:
-		if !m.loading {
-			return m, nil
+		var cmds []tea.Cmd
+		if m.loading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
 		}
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		cmds = append(cmds, m.metrics.Update(msg))
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// On the Metrics tab the range keys drive the TimeRange selector instead
+		// of switching detail tabs.
+		if m.tab == TabMetrics {
+			switch msg.String() {
+			case "left", "right", "h", "l":
+				return m, m.metrics.Update(msg)
+			}
+		}
 		switch msg.String() {
 		case "tab", "right", "l":
 			m.tab = DetailTab((int(m.tab) + 1) % len(detailTabNames))
-			m.vp.SetContent(m.renderTabBody())
-			m.vp.GotoTop()
-			return m, nil
+			return m, m.onTabChange()
 		case "shift+tab", "left", "h":
 			m.tab = DetailTab((int(m.tab) - 1 + len(detailTabNames)) % len(detailTabNames))
-			m.vp.SetContent(m.renderTabBody())
-			m.vp.GotoTop()
-			return m, nil
+			return m, m.onTabChange()
 		case "e":
 			// Toggle env-var masking.
 			m.maskEnv = !m.maskEnv
@@ -158,6 +178,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			}
 			return m, nil
 		case "r":
+			if m.tab == TabMetrics {
+				return m, m.metrics.start()
+			}
 			m.loading = true
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, LoadDetailCmd(m.client, m.name))
@@ -166,6 +189,17 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// onTabChange refreshes the viewport body after a tab switch and lazily kicks
+// off the metrics fetch the first time the Metrics tab is opened.
+func (m *DetailModel) onTabChange() tea.Cmd {
+	m.vp.SetContent(m.renderTabBody())
+	m.vp.GotoTop()
+	if m.tab == TabMetrics {
+		return m.metrics.startIfNeeded()
+	}
+	return nil
 }
 
 // View renders the entire detail screen.
@@ -182,7 +216,11 @@ func (m DetailModel) View() string {
 	if m.detail == nil {
 		return header + "\n\n  " + faint("no data")
 	}
-	return header + "\n" + m.tabsStrip() + "\n" + m.vp.View()
+	body := m.vp.View()
+	if m.tab == TabMetrics {
+		body = m.metrics.View()
+	}
+	return header + "\n" + m.tabsStrip() + "\n" + body
 }
 
 func (m DetailModel) tabsStrip() string {
@@ -245,7 +283,7 @@ func (m DetailModel) renderConfig(d *awsx.FunctionDetail) string {
 		{"Architectures", joinArchs(c.Architectures)},
 		{"Memory (MB)", intStr(c.MemorySize)},
 		{"Timeout (s)", intStr(c.Timeout)},
-		{"Ephemeral storage (MB)", ephemeralStr(c)},		{"Package type", string(c.PackageType)},
+		{"Ephemeral storage (MB)", ephemeralStr(c)}, {"Package type", string(c.PackageType)},
 		{"Code size", bytesStr(c.CodeSize)},
 		{"Code SHA256", deref(c.CodeSha256)},
 		{"Version", deref(c.Version)},

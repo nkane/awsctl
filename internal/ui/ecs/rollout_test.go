@@ -51,7 +51,7 @@ func TestRolloutLineStates(t *testing.T) {
 // TestServiceDescribeWatchesInProgress verifies the describe enters watch mode
 // on an in-progress rollout and leaves it once the rollout completes.
 func TestServiceDescribeWatchesInProgress(t *testing.T) {
-	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), "demo-cluster", "api")
+	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), &awsx.Config{}, "demo-cluster", "api")
 	m.SetSize(100, 30)
 
 	// In-progress -> watching, and a poll tick is scheduled.

@@ -214,7 +214,7 @@ func (s *serviceListScreen) WantsEsc() bool      { return s.m.IsFiltering() }
 
 func (s *serviceListScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	if name := s.m.Selected(); name != "" && cfg != nil {
-		return &serviceDescribeScreen{m: NewServiceDescribe(awsx.NewEcsClient(cfg), s.m.Cluster(), name)}
+		return &serviceDescribeScreen{m: NewServiceDescribe(awsx.NewEcsClient(cfg), cfg, s.m.Cluster(), name)}
 	}
 	return nil
 }

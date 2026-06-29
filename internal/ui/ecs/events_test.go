@@ -45,7 +45,7 @@ func TestServiceEventsIgnoresStaleLoad(t *testing.T) {
 // TestDescribeDrillOpensEvents verifies 'e' on the service describe builds the
 // events panel (#46 -> #47 drill).
 func TestDescribeDrillOpensEvents(t *testing.T) {
-	sd := &serviceDescribeScreen{m: NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), "demo-cluster", "api")}
+	sd := &serviceDescribeScreen{m: NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), &awsx.Config{}, "demo-cluster", "api")}
 	scr := sd.OpenEvents(&awsx.Config{})
 	if scr == nil || scr.Title() != "events" {
 		t.Fatalf("OpenEvents should yield an 'events' screen, got %v", scr)

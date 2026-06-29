@@ -10,7 +10,7 @@ import (
 )
 
 func TestServiceDescribeRenders(t *testing.T) {
-	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), "demo-cluster", "api")
+	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), &awsx.Config{}, "demo-cluster", "api")
 	m.SetSize(100, 30)
 
 	svc := &ecstypes.Service{
@@ -53,7 +53,7 @@ func TestServiceDescribeRenders(t *testing.T) {
 }
 
 func TestServiceDescribeIgnoresStaleLoad(t *testing.T) {
-	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), "demo-cluster", "api")
+	m := NewServiceDescribe(awsx.NewEcsClient(&awsx.Config{}), &awsx.Config{}, "demo-cluster", "api")
 	m.SetSize(100, 30)
 	m, _ = m.Update(serviceDescribeLoadedMsg{name: "other", svc: &ecstypes.Service{ServiceName: aws.String("other")}})
 	if strings.Contains(m.View(), "other") {

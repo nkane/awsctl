@@ -63,7 +63,7 @@ func (s *listScreen) WantsEsc() bool                 { return s.m.IsFiltering() 
 
 func (s *listScreen) OpenDetail(cfg *awsx.Config) core.Screen {
 	if sel := s.m.Selected(); sel.Name != "" && cfg != nil {
-		return &detailScreen{m: NewDetail(awsx.NewLambdaClient(cfg), sel.Name)}
+		return &detailScreen{m: NewDetail(awsx.NewLambdaClient(cfg), cfg, sel.Name)}
 	}
 	return nil
 }
