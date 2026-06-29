@@ -65,6 +65,13 @@ type App struct {
 	status components.StatusBar
 	help   help.Model
 
+	confirm components.Confirm
+	// Pending mutation gated behind the confirm modal: the command to run on
+	// ConfirmYes, plus the action/target labels recorded by auditLog.
+	pendingCmd    tea.Cmd
+	pendingAction string
+	pendingTarget string
+
 	showHelp bool
 	lastErr  string
 	quitting bool
@@ -121,7 +128,38 @@ func NewApp(opts Options) App {
 				ErrorTag:  theme.ErrorTag,
 			},
 		},
+		confirm: components.NewConfirm(components.ConfirmTheme{
+			Box:    theme.ConfirmBox,
+			Title:  theme.ConfirmTitle,
+			Body:   theme.ConfirmBody,
+			Active: theme.ConfirmActive,
+			Button: theme.ConfirmButton,
+		}),
 	}
+}
+
+// requestConfirm gates a mutation behind the confirm modal. In read-only mode
+// (no --unsafe) it refuses with a status-bar message and leaves the action
+// unrun and the modal closed. With --unsafe it opens the modal and stores run
+// as the pending command plus action/target as the labels auditLog records when
+// the user confirms or cancels. title/body are shown in the modal; action and
+// target identify the operation for the audit trail.
+func (a *App) requestConfirm(title, body, action, target string, run tea.Cmd) {
+	if !a.opts.Unsafe {
+		a.lastErr = "read-only mode — restart with --unsafe to mutate"
+		return
+	}
+	a.confirm = a.confirm.Show(title, body)
+	a.pendingCmd = run
+	a.pendingAction = action
+	a.pendingTarget = target
+}
+
+// clearPending drops the stored pending mutation after a decision.
+func (a *App) clearPending() {
+	a.pendingCmd = nil
+	a.pendingAction = ""
+	a.pendingTarget = ""
 }
 
 // Init implements tea.Model.
@@ -269,6 +307,27 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		a.quitting = true
 		return a, tea.Quit
+	}
+
+	// While the confirm modal is open it owns input, ahead of every global
+	// shortcut. On a decision we audit the outcome; ConfirmYes returns the
+	// pending command, ConfirmNo/None consume the key.
+	if a.confirm.Active() {
+		var res components.ConfirmResult
+		a.confirm, res = a.confirm.Update(msg)
+		switch res {
+		case components.ConfirmYes:
+			auditLog(a.opts.Logger, a.pendingAction, a.pendingTarget, "confirmed")
+			cmd := a.pendingCmd
+			a.clearPending()
+			return a, cmd
+		case components.ConfirmNo:
+			auditLog(a.opts.Logger, a.pendingAction, a.pendingTarget, "cancelled")
+			a.clearPending()
+			return a, nil
+		default:
+			return a, nil
+		}
 	}
 
 	// While the help overlay is open it owns input: esc/?/q close it.
@@ -481,6 +540,9 @@ func (a App) View() string {
 	body := a.active().Top().View()
 	if a.showHelp {
 		body = a.helpView()
+	}
+	if a.confirm.Active() {
+		body = a.confirm.View(w, h)
 	}
 	mid := lipgloss.NewStyle().Width(w).Height(h).Render(body)
 	return header + "\n" + mid + "\n" + a.hintView() + "\n" + a.statusView()
