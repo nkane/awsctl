@@ -4,7 +4,7 @@
 > scope, milestone status, and what's next. Doubles as the input plan for the
 > `build-with-agent-team` skill (see the Validation section).
 >
-> Last synced: 2026-06-29 — M2 metrics implemented on `feat/m2-metrics` (PR #80, CI green).
+> Last synced: 2026-06-29 — M2 metrics (PR #80) + M6 keystone #40 confirm/audit (PR #81) merged.
 
 ## Vision
 
@@ -65,8 +65,8 @@ Base list / detail / invoke / logs ship today. Open polish:
 - ✅ `--version` via ldflags (#24) · ✅ CI (#28) · ✅ release workflow (#29) · ✅ LocalStack integration CI (#31)
 - 🔲 `awsctl doctor` (#25), `--log-level` flag (#26), teatest snapshot tests (#27), release workflow follow-up (#30)
 
-### M6 — Writes, `--unsafe` (not started; blocked on #40)
-- 🔲 Confirm modal + audit log writer (#40) ← unblocks the rest
+### M6 — Writes, `--unsafe` (keystone landed; write actions open)
+- ✅ Confirm modal + audit log writer (#40) — gate now in place, unblocks the rest
 - 🔲 Lambda: env vars (#32), memory/timeout (#33), publish+alias (#34), delete (#35)
 - 🔲 Dynamo: Put/Update/Delete (#36), BatchWrite (#37), Create/DeleteTable (#38), PartiQL writes (#39)
 - 🔲 ECS: scale (#57), force deploy (#58), stop task (#59), update revision (#60)
@@ -93,7 +93,7 @@ provenance (`--version`) and integration CI are in place.
 
 ## Next up (recommended order)
 
-1. **#40 confirm modal + audit log** — keystone that unblocks all M6 writes.
+1. **M6 writes** — gate landed (#40); first actions: Lambda #32–35, Dynamo #36–39, ECS #57–60.
 2. **#30 release workflow** finish → cut first tagged release (now that #24 lands).
 3. **#43 / #41 cleanup** — close the stale-open ECS tickets already delivered.
 4. **UI polish** (#21 persist profile/region, #23 pagination, #20 error modal).
