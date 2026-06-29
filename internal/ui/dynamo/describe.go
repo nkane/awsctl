@@ -47,10 +47,21 @@ type DescribeModel struct {
 	err     string
 	width   int
 	height  int
+	section int // 0 = info, 1 = metrics
+	metrics metricsPanel
 }
 
+// describe section indices.
+const (
+	sectionInfo = iota
+	sectionMetrics
+)
+
+var describeSectionNames = []string{"Info", "Metrics"}
+
 // NewDescribe constructs the describe screen and triggers initial load via Init.
-func NewDescribe(client *awsx.DynamoClient, name string) DescribeModel {
+// cfg is used to build the CloudWatch client for the Metrics section.
+func NewDescribe(client *awsx.DynamoClient, cfg *awsx.Config, name string) DescribeModel {
 	vp := viewport.New(0, 0)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -60,6 +71,7 @@ func NewDescribe(client *awsx.DynamoClient, name string) DescribeModel {
 		vp:      vp,
 		spinner: sp,
 		loading: true,
+		metrics: newMetricsPanel(cfg, dynamoMetricSpecs(name)),
 	}
 }
 
@@ -87,12 +99,19 @@ func (m DescribeModel) Keys() []string {
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *DescribeModel) SetSize(w, h int) {
 	m.width, m.height = w, h
-	body := h - 2
+	// title + section strip + footer = 3 lines of chrome.
+	body := h - 3
 	if body < 4 {
 		body = 4
 	}
 	m.vp.Width = w
 	m.vp.Height = body
+	// The metrics section renders its own selector line inside body.
+	mh := body - 1
+	if mh < 4 {
+		mh = 4
+	}
+	m.metrics.SetSize(w, mh)
 	if m.desc != nil {
 		m.vp.SetContent(renderDescription(m.desc))
 	}
@@ -116,16 +135,38 @@ func (m DescribeModel) Update(msg tea.Msg) (DescribeModel, tea.Cmd) {
 		m.vp.GotoTop()
 		return m, nil
 
+	case metricsLoadedMsg:
+		return m, m.metrics.Update(msg)
+
 	case spinner.TickMsg:
-		if !m.loading {
-			return m, nil
+		var cmds []tea.Cmd
+		if m.loading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
 		}
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		cmds = append(cmds, m.metrics.Update(msg))
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
-		if msg.String() == "r" {
+		// In the metrics section the range keys drive the TimeRange selector.
+		if m.section == sectionMetrics {
+			switch msg.String() {
+			case "left", "right", "h", "l":
+				return m, m.metrics.Update(msg)
+			}
+		}
+		switch msg.String() {
+		case "tab", "shift+tab":
+			m.section = (m.section + 1) % len(describeSectionNames)
+			if m.section == sectionMetrics {
+				return m, m.metrics.startIfNeeded()
+			}
+			return m, nil
+		case "r":
+			if m.section == sectionMetrics {
+				return m, m.metrics.start()
+			}
 			m.loading = true
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, LoadDescribeCmd(m.client, m.name))
@@ -141,14 +182,36 @@ func (m DescribeModel) Update(msg tea.Msg) (DescribeModel, tea.Cmd) {
 func (m DescribeModel) View() string {
 	titleSty := lipgloss.NewStyle().Bold(true)
 	title := titleSty.Render("table: " + m.name)
-	body := m.vp.View()
-	if m.loading {
-		body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
-	} else if m.err != "" {
-		body = errStyle.Render("error: "+m.err) + "\n\n" + faint("press r to retry")
+
+	var body string
+	if m.section == sectionMetrics {
+		body = m.metrics.View()
+	} else {
+		body = m.vp.View()
+		if m.loading {
+			body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
+		} else if m.err != "" {
+			body = errStyle.Render("error: "+m.err) + "\n\n" + faint("press r to retry")
+		}
 	}
-	footer := faint("r refresh · esc back")
-	return title + "\n" + body + "\n" + footer
+
+	footer := faint("tab section · r refresh · esc back")
+	return title + "\n" + m.sectionStrip() + "\n" + body + "\n" + footer
+}
+
+// sectionStrip renders the Info / Metrics section tabs.
+func (m DescribeModel) sectionStrip() string {
+	active := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63")).Padding(0, 1)
+	inactive := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	parts := make([]string, len(describeSectionNames))
+	for i, n := range describeSectionNames {
+		if i == m.section {
+			parts[i] = active.Render(n)
+		} else {
+			parts[i] = inactive.Render(n)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // renderDescription formats a TableDescription as a multi-section string for

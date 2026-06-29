@@ -68,7 +68,7 @@ func (s *listScreen) WantsEsc() bool                 { return s.m.IsFiltering() 
 
 func (s *listScreen) OpenDescribe(cfg *awsx.Config) core.Screen {
 	if name := s.m.Selected(); name != "" && cfg != nil {
-		return &describeScreen{m: NewDescribe(awsx.NewDynamoClient(cfg), name)}
+		return &describeScreen{m: NewDescribe(awsx.NewDynamoClient(cfg), cfg, name)}
 	}
 	return nil
 }

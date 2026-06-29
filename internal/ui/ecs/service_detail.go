@@ -58,10 +58,21 @@ type ServiceDescribeModel struct {
 	err      string
 	width    int
 	height   int
+	section  int // 0 = info, 1 = metrics
+	metrics  metricsPanel
 }
 
-// NewServiceDescribe constructs the describe screen; Init triggers the load.
-func NewServiceDescribe(client *awsx.EcsClient, cluster, name string) ServiceDescribeModel {
+// service describe section indices.
+const (
+	sectionInfo = iota
+	sectionMetrics
+)
+
+var serviceSectionNames = []string{"Info", "Metrics"}
+
+// NewServiceDescribe constructs the describe screen; Init triggers the load. cfg
+// is used to build the CloudWatch client for the Metrics section.
+func NewServiceDescribe(client *awsx.EcsClient, cfg *awsx.Config, cluster, name string) ServiceDescribeModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return ServiceDescribeModel{
@@ -71,6 +82,7 @@ func NewServiceDescribe(client *awsx.EcsClient, cluster, name string) ServiceDes
 		vp:      viewport.New(0, 0),
 		spinner: sp,
 		loading: true,
+		metrics: newMetricsPanel(cfg, ecsMetricSpecs(cluster, name)),
 	}
 }
 
@@ -88,12 +100,19 @@ func (m ServiceDescribeModel) Cluster() string { return m.cluster }
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *ServiceDescribeModel) SetSize(w, h int) {
 	m.width, m.height = w, h
-	body := h - 2
+	// title + section strip + footer = 3 lines of chrome.
+	body := h - 3
 	if body < 4 {
 		body = 4
 	}
 	m.vp.Width = w
 	m.vp.Height = body
+	// The metrics section renders its own selector line inside body.
+	mh := body - 1
+	if mh < 4 {
+		mh = 4
+	}
+	m.metrics.SetSize(w, mh)
 	if m.svc != nil {
 		m.vp.SetContent(renderService(m.svc))
 	}
@@ -129,16 +148,38 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 		}
 		return m, tea.Batch(loadServiceDescribeCmd(m.client, m.cluster, m.name), rolloutTickCmd())
 
+	case metricsLoadedMsg:
+		return m, m.metrics.Update(msg)
+
 	case spinner.TickMsg:
-		if !m.loading {
-			return m, nil
+		var cmds []tea.Cmd
+		if m.loading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
 		}
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		cmds = append(cmds, m.metrics.Update(msg))
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
-		if msg.String() == "r" {
+		// In the metrics section the range keys drive the TimeRange selector.
+		if m.section == sectionMetrics {
+			switch msg.String() {
+			case "left", "right", "h", "l":
+				return m, m.metrics.Update(msg)
+			}
+		}
+		switch msg.String() {
+		case "tab", "shift+tab":
+			m.section = (m.section + 1) % len(serviceSectionNames)
+			if m.section == sectionMetrics {
+				return m, m.metrics.startIfNeeded()
+			}
+			return m, nil
+		case "r":
+			if m.section == sectionMetrics {
+				return m, m.metrics.start()
+			}
 			m.loading = true
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, loadServiceDescribeCmd(m.client, m.cluster, m.name))
@@ -156,17 +197,39 @@ func (m ServiceDescribeModel) View() string {
 	if rl := rolloutLine(m.svc); rl != "" {
 		title += "  " + rl
 	}
-	body := m.vp.View()
-	if m.loading {
-		body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
-	} else if m.err != "" {
-		body = errStyle.Render("error: "+m.err) + "\n\n" + faint("press r to retry")
+
+	var body string
+	if m.section == sectionMetrics {
+		body = m.metrics.View()
+	} else {
+		body = m.vp.View()
+		if m.loading {
+			body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
+		} else if m.err != "" {
+			body = errStyle.Render("error: "+m.err) + "\n\n" + faint("press r to retry")
+		}
 	}
-	footer := faint("r refresh · esc back")
+
+	footer := faint("tab section · r refresh · esc back")
 	if m.watching {
-		footer = faint("● watching rollout · r refresh · esc back")
+		footer = faint("● watching rollout · tab section · r refresh · esc back")
 	}
-	return title + "\n" + body + "\n" + footer
+	return title + "\n" + m.sectionStrip() + "\n" + body + "\n" + footer
+}
+
+// sectionStrip renders the Info / Metrics section tabs.
+func (m ServiceDescribeModel) sectionStrip() string {
+	active := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63")).Padding(0, 1)
+	inactive := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	parts := make([]string, len(serviceSectionNames))
+	for i, n := range serviceSectionNames {
+		if i == m.section {
+			parts[i] = active.Render(n)
+		} else {
+			parts[i] = inactive.Render(n)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // primaryDeployment returns the service's PRIMARY deployment, or nil.
