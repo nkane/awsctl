@@ -15,9 +15,6 @@ import (
 	"github.com/nkane/awsctl/internal/ui"
 )
 
-// Version is set at build time via -ldflags.
-var Version = "dev"
-
 func main() {
 	var (
 		profile = flag.String("profile", os.Getenv("AWS_PROFILE"), "AWS profile name (defaults to AWS_PROFILE / default)")
@@ -29,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("awsctl", Version)
+		fmt.Println(versionString())
 		return
 	}
 
