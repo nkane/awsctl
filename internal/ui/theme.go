@@ -16,6 +16,13 @@ type Theme struct {
 	TabActive  lipgloss.Style
 	TabInactiv lipgloss.Style
 	Border     lipgloss.Style
+
+	// Confirm modal styles (mapped into components.ConfirmTheme by NewApp).
+	ConfirmBox    lipgloss.Style
+	ConfirmTitle  lipgloss.Style
+	ConfirmBody   lipgloss.Style
+	ConfirmActive lipgloss.Style
+	ConfirmButton lipgloss.Style
 }
 
 // NewTheme returns the default theme.
@@ -32,5 +39,11 @@ func NewTheme() Theme {
 		TabActive:  lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63")).Padding(0, 2),
 		TabInactiv: lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 2),
 		Border:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("241")),
+
+		ConfirmBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("241")).Padding(1, 2),
+		ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
+		ConfirmBody:   lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		ConfirmActive: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63")).Padding(0, 1),
+		ConfirmButton: lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1),
 	}
 }
