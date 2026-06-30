@@ -15,6 +15,7 @@ import (
 
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // scanPageMsg carries one page of scan results.
@@ -145,6 +146,16 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case writeDoneMsg:
+		// An item-level write against this table landed — re-scan so the change
+		// is visible. Table create/drop is the list screen's concern.
+		if msg.err == nil && msg.target == m.table &&
+			(msg.action == actPutItem || msg.action == actDeleteItem ||
+				msg.action == actBatchWrite || msg.action == actPartiQLWrite) {
+			return m, m.rescan()
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if !m.loading {
 			return m, nil
@@ -155,6 +166,31 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "D":
+			// Delete the highlighted item — no input, just confirm.
+			key := m.SelectedKey()
+			if key == nil {
+				m.err = "cannot delete: no primary key for the selected row"
+				return m, nil
+			}
+			return m, core.ConfirmRequest(
+				"Delete item",
+				"Permanently delete the selected item from "+m.table+"?",
+				actDeleteItem, m.table, deleteItemCmd(m.client, m.table, key),
+			)
+		case "P":
+			// Put/update an item — seed the editor with the highlighted row.
+			seed := "{}"
+			if it := m.Selected(); it != nil {
+				if js := itemJSON(it); js != "" {
+					seed = js
+				}
+			}
+			return m, core.Push(newEditItemScreen(m.client, m.table, seed))
+		case "B":
+			return m, core.Push(newBatchScreen(m.client, m.table))
+		case "W":
+			return m, core.Push(newPartiqlScreen(m.client, m.table))
 		case "j", "down":
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
@@ -176,15 +212,7 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, scanPageCmd(m.client, m.table, m.lek))
 		case "r":
-			m.loading = true
-			m.err = ""
-			m.page = 0
-			m.totItems = 0
-			m.cursor = 0
-			m.items = nil
-			m.lek = nil
-			m.vp.SetContent("")
-			return m, tea.Batch(m.spinner.Tick, scanPageCmd(m.client, m.table, nil))
+			return m, m.rescan()
 		case "g":
 			m.cursor = 0
 			m.refresh()
@@ -203,6 +231,29 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// rescan resets pagination state and re-runs the scan from the first page.
+// Used by 'r' and after a successful item-level write.
+func (m *ScanModel) rescan() tea.Cmd {
+	m.loading = true
+	m.err = ""
+	m.page = 0
+	m.totItems = 0
+	m.cursor = 0
+	m.items = nil
+	m.lek = nil
+	m.vp.SetContent("")
+	return tea.Batch(m.spinner.Tick, scanPageCmd(m.client, m.table, nil))
+}
+
+// itemJSON renders an item as indented plain JSON for seeding the put editor.
+func itemJSON(it map[string]ddbtypes.AttributeValue) string {
+	b, err := json.MarshalIndent(plainOf(it), "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // ensureCursorVisible scrolls so the cursor row stays in view.
@@ -256,7 +307,7 @@ func (m ScanModel) View() string {
 	if m.loading {
 		loadHint = " · " + m.spinner.View() + " loading"
 	}
-	footer := faint(fmt.Sprintf("page %d · items %d · cursor %d · %s%s    j/k cursor · enter open · n next · r reset · esc back",
+	footer := faint(fmt.Sprintf("page %d · items %d · cursor %d · %s%s    j/k cursor · enter open · n next · r reset · P put · D delete · B batch · W partiql · esc back",
 		m.page, m.totItems, m.cursor+1, more, loadHint))
 	return title + "\n" + body + "\n" + footer
 }

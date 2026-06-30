@@ -16,6 +16,7 @@ import (
 
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // itemRefetchedMsg is returned after a re-fetch via GetItem.
@@ -103,6 +104,31 @@ func (m ItemModel) Update(msg tea.Msg) (ItemModel, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case writeDoneMsg:
+		if msg.target != m.table {
+			return m, nil
+		}
+		switch msg.action {
+		case actDeleteItem:
+			if msg.err != nil {
+				m.err = msg.err.Error()
+				return m, nil
+			}
+			m.err = ""
+			m.item = nil
+			m.flash = "deleted — esc back"
+			m.refresh()
+			return m, nil
+		case actPutItem:
+			if msg.err == nil && m.keySet && m.client != nil {
+				m.loading = true
+				m.err = ""
+				m.flash = ""
+				return m, tea.Batch(m.spinner.Tick, getItemCmd(m.client, m.table, m.key))
+			}
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if !m.loading {
 			return m, nil
@@ -151,6 +177,29 @@ func (m ItemModel) Update(msg tea.Msg) (ItemModel, tea.Cmd) {
 			m.collapsed = map[string]bool{}
 			m.refresh()
 			return m, nil
+		case "P":
+			// Edit/put this item — seed the editor with its current JSON.
+			if m.client == nil {
+				return m, nil
+			}
+			seed := "{}"
+			if m.item != nil {
+				if js := itemJSON(m.item); js != "" {
+					seed = js
+				}
+			}
+			return m, core.Push(newEditItemScreen(m.client, m.table, seed))
+		case "D":
+			// Delete this item — no input, just confirm.
+			if !m.keySet || m.client == nil {
+				m.err = "cannot delete: no primary key in context"
+				return m, nil
+			}
+			return m, core.ConfirmRequest(
+				"Delete item",
+				"Permanently delete this item from "+m.table+"?",
+				actDeleteItem, m.table, deleteItemCmd(m.client, m.table, m.key),
+			)
 		}
 	}
 	var cmd tea.Cmd
@@ -172,7 +221,7 @@ func (m ItemModel) View() string {
 	} else if m.flash != "" {
 		status = faint(m.flash)
 	}
-	footer := faint("y copy JSON · r refetch · c collapse all · e expand all · g/G top/bottom · esc back")
+	footer := faint("y copy JSON · r refetch · P put · D delete · c collapse · e expand · g/G top/bottom · esc back")
 	if status != "" {
 		footer = status + "    " + footer
 	}

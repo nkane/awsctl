@@ -14,6 +14,7 @@ import (
 
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // queryDescribeMsg carries the DescribeTable result used to seed key schema.
@@ -171,6 +172,15 @@ func (m QueryModel) Update(msg tea.Msg) (QueryModel, tea.Cmd) {
 		m.refreshResults()
 		return m, nil
 
+	case writeDoneMsg:
+		// A delete/put against this table landed — re-run the query so the
+		// results reflect the change.
+		if msg.err == nil && msg.target == m.table && m.page > 0 &&
+			(msg.action == actDeleteItem || msg.action == actPutItem) {
+			return m, m.runQuery(false)
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if !m.loading && !m.loadDesc {
 			return m, nil
@@ -224,6 +234,21 @@ func (m QueryModel) Update(msg tea.Msg) (QueryModel, tea.Cmd) {
 			}
 			m.resetResults()
 			return m, nil
+		case "D":
+			if m.focus == 1 || m.focus == 3 || m.focus == 4 {
+				break
+			}
+			// Delete the highlighted result — no input, just confirm.
+			key := m.SelectedKey()
+			if key == nil {
+				m.err = "cannot delete: no primary key for the selected row"
+				return m, nil
+			}
+			return m, core.ConfirmRequest(
+				"Delete item",
+				"Permanently delete the selected item from "+m.table+"?",
+				actDeleteItem, m.table, deleteItemCmd(m.client, m.table, key),
+			)
 		case "j", "down":
 			if m.focus == 1 || m.focus == 3 || m.focus == 4 {
 				break
@@ -502,7 +527,7 @@ func (m QueryModel) View() string {
 	if m.loading && m.totItems > 0 {
 		loadHint = " · " + m.spinner.View() + " loading"
 	}
-	footer := faint(fmt.Sprintf("page %d · items %d · %s%s    tab focus · ←/→ choose · enter run/next-field · n next-page · r reset · esc back",
+	footer := faint(fmt.Sprintf("page %d · items %d · %s%s    tab focus · ←/→ choose · enter run/next-field · n next-page · r reset · o open · D delete · esc back",
 		m.page, m.totItems, more, loadHint))
 
 	return b.String() + "\n" + results + "\n" + footer

@@ -58,7 +58,11 @@ func (s *listScreen) View() string     { return s.m.View() }
 func (s *listScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *listScreen) Title() string    { return "tables" }
 func (s *listScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("enter", "describe"), core.Hint("s", "scan"), core.Hint("Q", "query")}
+	return []key.Binding{
+		core.Hint("enter", "describe"),
+		core.Hint("C", "create table"),
+		core.Hint("X", "drop table"),
+	}
 }
 func (s *listScreen) SetClient(c *awsx.DynamoClient) { s.m.SetClient(c) }
 func (s *listScreen) Refresh() tea.Cmd               { return s.m.Refresh() }
@@ -87,7 +91,7 @@ func (s *describeScreen) View() string     { return s.m.View() }
 func (s *describeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *describeScreen) Title() string    { return "describe" }
 func (s *describeScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("s", "scan"), core.Hint("Q", "query")}
+	return []key.Binding{core.Hint("s", "scan"), core.Hint("Q", "query"), core.Hint("X", "drop table")}
 }
 
 func (s *describeScreen) OpenScan(cfg *awsx.Config) core.Screen {
@@ -117,7 +121,11 @@ func (s *scanScreen) View() string     { return s.m.View() }
 func (s *scanScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *scanScreen) Title() string    { return "scan" }
 func (s *scanScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("enter", "item"), core.Hint("n", "next page")}
+	return []key.Binding{
+		core.Hint("enter", "item"), core.Hint("n", "next page"),
+		core.Hint("P", "put"), core.Hint("D", "delete"),
+		core.Hint("B", "batch"), core.Hint("W", "partiql"),
+	}
 }
 
 func (s *scanScreen) OpenItem(cfg *awsx.Config) core.Screen {
@@ -142,7 +150,7 @@ func (s *queryScreen) View() string     { return s.m.View() }
 func (s *queryScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *queryScreen) Title() string    { return "query" }
 func (s *queryScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("o", "open item")}
+	return []key.Binding{core.Hint("o", "open item"), core.Hint("D", "delete")}
 }
 func (s *queryScreen) InputFocused() bool  { return s.m.InputFocused() }
 func (s *queryScreen) CapturesInput() bool { return s.m.InputFocused() } // key-condition editor
@@ -169,6 +177,9 @@ func (s *itemScreen) View() string     { return s.m.View() }
 func (s *itemScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *itemScreen) Title() string    { return "item" }
 func (s *itemScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("y", "copy"), core.Hint("r", "refetch")}
+	return []key.Binding{
+		core.Hint("y", "copy"), core.Hint("r", "refetch"),
+		core.Hint("P", "put"), core.Hint("D", "delete"),
+	}
 }
 func (s *itemScreen) CapturesInput() bool { return true } // scrollable detail owns keys

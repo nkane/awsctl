@@ -15,6 +15,7 @@ import (
 
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // detailLoadedMsg carries the result of GetFunctionDetail.
@@ -144,6 +145,25 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	case metricsLoadedMsg:
 		return m, m.metrics.Update(msg)
 
+	// A write completed elsewhere (the editor screen pushed on top); refresh the
+	// detail so the change is visible once the editor pops. These also reach this
+	// screen via the App's broadcast of non-key messages.
+	case envUpdateDoneMsg:
+		if msg.name == m.name && msg.err == nil {
+			return m, m.reload()
+		}
+		return m, nil
+	case configUpdateDoneMsg:
+		if msg.name == m.name && msg.err == nil {
+			return m, m.reload()
+		}
+		return m, nil
+	case publishDoneMsg:
+		if msg.name == m.name && msg.err == nil {
+			return m, m.reload()
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmds []tea.Cmd
 		if m.loading {
@@ -181,14 +201,60 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			if m.tab == TabMetrics {
 				return m, m.metrics.start()
 			}
-			m.loading = true
-			m.err = ""
-			return m, tea.Batch(m.spinner.Tick, LoadDetailCmd(m.client, m.name))
+			return m, m.reload()
+		case "E":
+			// Edit environment variables (#32).
+			return m, core.Push(newEnvEditScreen(m.client, m.name, m.currentEnv()))
+		case "M":
+			// Edit memory / timeout (#33).
+			mem, to := m.currentMemTimeout()
+			return m, core.Push(newConfigEditScreen(m.client, m.name, mem, to))
+		case "P":
+			// Publish a new version (+ optional alias) (#34).
+			return m, core.Push(newPublishScreen(m.client, m.name))
 		}
 	}
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// reload re-fetches the function detail (shared by the 'r' key and the
+// post-write refresh).
+func (m *DetailModel) reload() tea.Cmd {
+	m.loading = true
+	m.err = ""
+	return tea.Batch(m.spinner.Tick, LoadDetailCmd(m.client, m.name))
+}
+
+// currentEnv returns a copy of the function's current environment variables,
+// used to pre-fill the env editor.
+func (m DetailModel) currentEnv() map[string]string {
+	out := map[string]string{}
+	if m.detail != nil && m.detail.Function != nil && m.detail.Function.Configuration != nil {
+		if env := m.detail.Function.Configuration.Environment; env != nil {
+			for k, v := range env.Variables {
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
+// currentMemTimeout returns the function's current memory (MB) and timeout (s),
+// falling back to Lambda's defaults when the detail is not yet loaded.
+func (m DetailModel) currentMemTimeout() (int32, int32) {
+	var mem, to int32 = 128, 3
+	if m.detail != nil && m.detail.Function != nil && m.detail.Function.Configuration != nil {
+		c := m.detail.Function.Configuration
+		if c.MemorySize != nil {
+			mem = *c.MemorySize
+		}
+		if c.Timeout != nil {
+			to = *c.Timeout
+		}
+	}
+	return mem, to
 }
 
 // onTabChange refreshes the viewport body after a tab switch and lazily kicks
@@ -205,7 +271,7 @@ func (m *DetailModel) onTabChange() tea.Cmd {
 // View renders the entire detail screen.
 func (m DetailModel) View() string {
 	header := titleStyle.Render("Lambda · "+m.name) +
-		"  " + faintSty.Render("(esc back · tab/h/l next pane · e mask · r refresh · j/k scroll)")
+		"  " + faintSty.Render("(tab/h/l pane · e mask · r refresh · E env · M config · P publish · esc back)")
 
 	if m.loading {
 		return header + "\n\n  " + m.spinner.View() + " loading details…"

@@ -23,3 +23,24 @@ func Push(scr Screen) tea.Cmd {
 func Pop() tea.Cmd {
 	return func() tea.Msg { return PopMsg{} }
 }
+
+// ConfirmRequestMsg asks the App to gate a mutation behind the confirm modal.
+// A screen emits this (via ConfirmRequest) when the user presses a write key;
+// the App is the single owner of the modal and the --unsafe gate, so screens
+// never reach across to open it themselves. In read-only mode the App refuses.
+// Title/Body are shown in the modal; Action/Target label the audit record; Run
+// is the command executed only if the user confirms.
+type ConfirmRequestMsg struct {
+	Title  string
+	Body   string
+	Action string
+	Target string
+	Run    tea.Cmd
+}
+
+// ConfirmRequest returns a command that emits a ConfirmRequestMsg.
+func ConfirmRequest(title, body, action, target string, run tea.Cmd) tea.Cmd {
+	return func() tea.Msg {
+		return ConfirmRequestMsg{Title: title, Body: body, Action: action, Target: target, Run: run}
+	}
+}

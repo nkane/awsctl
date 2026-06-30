@@ -3,16 +3,29 @@ package ecs
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
+)
+
+// editMode identifies which inline write-input field, if any, owns input on the
+// service-describe screen.
+type editMode int
+
+const (
+	editNone editMode = iota
+	editScale
+	editTaskDef
 )
 
 // rolloutPollInterval controls how often the describe re-fetches while a
@@ -60,6 +73,12 @@ type ServiceDescribeModel struct {
 	height   int
 	section  int // 0 = info, 1 = metrics
 	metrics  metricsPanel
+
+	// Inline write-input (scale / update-revision) state.
+	editing    editMode
+	editPrompt string
+	input      textinput.Model
+	notice     string // success line shown after a confirmed mutation
 }
 
 // service describe section indices.
@@ -96,6 +115,10 @@ func (m ServiceDescribeModel) Name() string { return m.name }
 
 // Cluster returns the owning cluster name.
 func (m ServiceDescribeModel) Cluster() string { return m.cluster }
+
+// Editing reports whether an inline write-input field owns input. The App uses
+// this to forward every key (and esc) to the screen while editing.
+func (m ServiceDescribeModel) Editing() bool { return m.editing != editNone }
 
 // SetSize sizes the viewport (1-line title + 1-line footer).
 func (m *ServiceDescribeModel) SetSize(w, h int) {
@@ -142,6 +165,22 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 		}
 		return m, nil
 
+	case ecsWriteDoneMsg:
+		// React only to writes that targeted this service (scale / force-deploy
+		// / update-task-def all use the service name as the target).
+		if msg.target != m.name {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.notice = ""
+			return m, nil
+		}
+		m.err = ""
+		m.notice = noticeFor(msg.action, msg.target)
+		m.loading = true
+		return m, tea.Batch(m.spinner.Tick, loadServiceDescribeCmd(m.client, m.cluster, m.name))
+
 	case rolloutTickMsg:
 		if !m.watching {
 			return m, nil // rollout finished; stop polling
@@ -162,6 +201,10 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// While an inline write-input field is open it owns every key.
+		if m.editing != editNone {
+			return m.updateEditing(msg)
+		}
 		// In the metrics section the range keys drive the TimeRange selector.
 		if m.section == sectionMetrics {
 			switch msg.String() {
@@ -183,12 +226,138 @@ func (m ServiceDescribeModel) Update(msg tea.Msg) (ServiceDescribeModel, tea.Cmd
 			m.loading = true
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, loadServiceDescribeCmd(m.client, m.cluster, m.name))
+		case "S": // scale desired count (#57)
+			cur := ""
+			if m.svc != nil {
+				cur = strconv.Itoa(int(m.svc.DesiredCount))
+			}
+			m.startEdit(editScale, "new desired count", cur)
+			return m, textinput.Blink
+		case "F": // force a new deployment (#58)
+			run := forceDeployCmd(m.client, m.cluster, m.name)
+			return m, core.ConfirmRequest(
+				"Force new deployment",
+				"Start a new rolling deployment of "+m.name+"?",
+				actionForceDeploy, m.name, run,
+			)
+		case "U": // update task-def revision (#60)
+			fam := m.currentFamily()
+			if fam == "" {
+				m.err = "current task-def family unknown — refresh first"
+				return m, nil
+			}
+			m.startEdit(editTaskDef, "new revision for "+fam, m.currentRevision())
+			return m, textinput.Blink
 		}
 	}
 
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// startEdit opens an inline numeric input seeded with initial.
+func (m *ServiceDescribeModel) startEdit(mode editMode, prompt, initial string) {
+	in := textinput.New()
+	in.Prompt = "  "
+	in.CharLimit = 16
+	in.SetValue(initial)
+	in.CursorEnd()
+	in.Focus()
+	m.input = in
+	m.editing = mode
+	m.editPrompt = prompt
+	m.err = ""
+	m.notice = ""
+}
+
+// updateEditing handles keys while an inline input owns the screen: esc cancels,
+// enter submits, everything else edits the field.
+func (m ServiceDescribeModel) updateEditing(msg tea.KeyMsg) (ServiceDescribeModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.editing = editNone
+		m.input.Blur()
+		m.err = ""
+		return m, nil
+	case "enter":
+		return m.submitEdit()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+// submitEdit validates the field and emits a gated mutation, or sets an error.
+func (m ServiceDescribeModel) submitEdit() (ServiceDescribeModel, tea.Cmd) {
+	val := strings.TrimSpace(m.input.Value())
+	switch m.editing {
+	case editScale:
+		n, err := strconv.Atoi(val)
+		if err != nil || n < 0 {
+			m.err = "desired count must be a non-negative integer"
+			return m, nil
+		}
+		m.editing = editNone
+		m.input.Blur()
+		run := scaleCmd(m.client, m.cluster, m.name, int32(n))
+		return m, core.ConfirmRequest(
+			"Scale service",
+			fmt.Sprintf("Set %s desired count to %d?", m.name, n),
+			actionScale, m.name, run,
+		)
+	case editTaskDef:
+		rev, err := strconv.Atoi(val)
+		if err != nil || rev <= 0 {
+			m.err = "revision must be a positive integer"
+			return m, nil
+		}
+		fam := m.currentFamily()
+		if fam == "" {
+			m.err = "current task-def family unknown — refresh first"
+			return m, nil
+		}
+		taskDef := fam + ":" + strconv.Itoa(rev)
+		m.editing = editNone
+		m.input.Blur()
+		run := updateTaskDefCmd(m.client, m.cluster, m.name, taskDef)
+		return m, core.ConfirmRequest(
+			"Update task definition",
+			fmt.Sprintf("Point %s at %s?", m.name, taskDef),
+			actionUpdateTaskDef, m.name, run,
+		)
+	}
+	return m, nil
+}
+
+// currentFamily returns the family of the service's current task definition.
+func (m ServiceDescribeModel) currentFamily() string {
+	if m.svc == nil || m.svc.TaskDefinition == nil {
+		return ""
+	}
+	return familyOf(taskDefTail(*m.svc.TaskDefinition))
+}
+
+// currentRevision returns the revision of the service's current task definition.
+func (m ServiceDescribeModel) currentRevision() string {
+	if m.svc == nil || m.svc.TaskDefinition == nil {
+		return ""
+	}
+	tail := taskDefTail(*m.svc.TaskDefinition)
+	if i := strings.LastIndexByte(tail, ':'); i >= 0 {
+		return tail[i+1:]
+	}
+	return ""
+}
+
+// editView renders the inline input form.
+func (m ServiceDescribeModel) editView() string {
+	title := lipgloss.NewStyle().Bold(true).Render(m.editPrompt + ":")
+	body := title + "\n" + m.input.View()
+	if m.err != "" {
+		body += "\n\n" + errStyle.Render("error: "+m.err)
+	}
+	return body
 }
 
 // View renders the describe screen.
@@ -199,9 +368,12 @@ func (m ServiceDescribeModel) View() string {
 	}
 
 	var body string
-	if m.section == sectionMetrics {
+	switch {
+	case m.editing != editNone:
+		body = m.editView()
+	case m.section == sectionMetrics:
 		body = m.metrics.View()
-	} else {
+	default:
 		body = m.vp.View()
 		if m.loading {
 			body = fmt.Sprintf("%s describing %s…", m.spinner.View(), m.name)
@@ -210,9 +382,17 @@ func (m ServiceDescribeModel) View() string {
 		}
 	}
 
-	footer := faint("tab section · r refresh · esc back")
-	if m.watching {
-		footer = faint("● watching rollout · tab section · r refresh · esc back")
+	var footer string
+	switch {
+	case m.editing != editNone:
+		footer = faint("enter confirm · esc cancel")
+	case m.watching:
+		footer = faint("● watching rollout · tab section · S scale · F force-deploy · U update-rev · r refresh · esc back")
+	default:
+		footer = faint("tab section · S scale · F force-deploy · U update-rev · r refresh · esc back")
+	}
+	if m.notice != "" && m.editing == editNone {
+		footer = noticeStyle.Render("✓ "+m.notice) + "  " + footer
 	}
 	return title + "\n" + m.sectionStrip() + "\n" + body + "\n" + footer
 }

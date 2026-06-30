@@ -472,6 +472,64 @@ func serviceSummary(svc ecstypes.Service) ServiceSummary {
 	return s
 }
 
+// --- Writes (M6, tickets #57–#60) ---
+
+// UpdateServiceDesiredCount sets a service's desired task count, scaling it up
+// or down. (#57)
+func (c *EcsClient) UpdateServiceDesiredCount(ctx context.Context, cluster, service string, count int32) error {
+	_, err := c.api.UpdateService(ctx, &ecs.UpdateServiceInput{
+		Cluster:      &cluster,
+		Service:      &service,
+		DesiredCount: &count,
+	})
+	if err != nil {
+		return fmt.Errorf("ecs: scale service %q to %d: %w", service, count, err)
+	}
+	return nil
+}
+
+// ForceNewDeployment triggers a fresh rolling deployment of a service without
+// changing its task definition (e.g. to pick up a moved :latest image). (#58)
+func (c *EcsClient) ForceNewDeployment(ctx context.Context, cluster, service string) error {
+	_, err := c.api.UpdateService(ctx, &ecs.UpdateServiceInput{
+		Cluster:            &cluster,
+		Service:            &service,
+		ForceNewDeployment: true,
+	})
+	if err != nil {
+		return fmt.Errorf("ecs: force new deployment of %q: %w", service, err)
+	}
+	return nil
+}
+
+// StopTask stops a single running task. reason is optional and surfaces in
+// later DescribeTasks calls; an empty reason is omitted. (#59)
+func (c *EcsClient) StopTask(ctx context.Context, cluster, task, reason string) error {
+	in := &ecs.StopTaskInput{Cluster: &cluster, Task: &task}
+	if reason != "" {
+		in.Reason = &reason
+	}
+	_, err := c.api.StopTask(ctx, in)
+	if err != nil {
+		return fmt.Errorf("ecs: stop task %q: %w", task, err)
+	}
+	return nil
+}
+
+// UpdateServiceTaskDef points a service at a different task-definition
+// (family:revision or full ARN), triggering a new deployment. (#60)
+func (c *EcsClient) UpdateServiceTaskDef(ctx context.Context, cluster, service, taskDef string) error {
+	_, err := c.api.UpdateService(ctx, &ecs.UpdateServiceInput{
+		Cluster:        &cluster,
+		Service:        &service,
+		TaskDefinition: &taskDef,
+	})
+	if err != nil {
+		return fmt.Errorf("ecs: update service %q task-def to %q: %w", service, taskDef, err)
+	}
+	return nil
+}
+
 // shortTaskDef trims a task-definition ARN to its family:revision tail.
 func shortTaskDef(arn string) string {
 	for i := len(arn) - 1; i >= 0; i-- {

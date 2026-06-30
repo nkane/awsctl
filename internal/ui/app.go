@@ -269,6 +269,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.active().Pop()
 		return a, nil
 
+	case core.ConfirmRequestMsg:
+		// A screen requested a gated mutation. The App owns the modal + the
+		// --unsafe gate; requestConfirm refuses in read-only mode.
+		a.requestConfirm(msg.Title, msg.Body, msg.Action, msg.Target, msg.Run)
+		return a, nil
+
 	case execErrMsg:
 		a.lastErr = msg.err
 		return a, nil

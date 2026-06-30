@@ -158,6 +158,61 @@ func (c *DynamoClient) PutItem(ctx context.Context, table string, item map[strin
 	return nil
 }
 
+// DeleteItem removes a single item by its primary key. A delete of a
+// non-existent key is a no-op (DynamoDB returns success).
+func (c *DynamoClient) DeleteItem(ctx context.Context, table string, key map[string]ddbtypes.AttributeValue) error {
+	_, err := c.api.DeleteItem(ctx, &dynamodb.DeleteItemInput{TableName: &table, Key: key})
+	if err != nil {
+		return fmt.Errorf("dynamodb: delete item %q: %w", table, err)
+	}
+	return nil
+}
+
+// BatchWriteItems applies puts and deletes to one table using BatchWriteItem.
+// Requests are chunked to the 25-item service limit and UnprocessedItems are
+// retried a bounded number of times. An empty puts+deletes is a no-op.
+func (c *DynamoClient) BatchWriteItems(ctx context.Context, table string, puts []map[string]ddbtypes.AttributeValue, deletes []map[string]ddbtypes.AttributeValue) error {
+	reqs := make([]ddbtypes.WriteRequest, 0, len(puts)+len(deletes))
+	for _, it := range puts {
+		reqs = append(reqs, ddbtypes.WriteRequest{PutRequest: &ddbtypes.PutRequest{Item: it}})
+	}
+	for _, k := range deletes {
+		reqs = append(reqs, ddbtypes.WriteRequest{DeleteRequest: &ddbtypes.DeleteRequest{Key: k}})
+	}
+	const maxBatch = 25
+	for i := 0; i < len(reqs); i += maxBatch {
+		end := i + maxBatch
+		if end > len(reqs) {
+			end = len(reqs)
+		}
+		batch := map[string][]ddbtypes.WriteRequest{table: reqs[i:end]}
+		for attempt := 0; ; attempt++ {
+			out, err := c.api.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: batch})
+			if err != nil {
+				return fmt.Errorf("dynamodb: batch write %q: %w", table, err)
+			}
+			if len(out.UnprocessedItems[table]) == 0 {
+				break
+			}
+			if attempt >= 8 {
+				return fmt.Errorf("dynamodb: batch write %q: %d unprocessed items after retries", table, len(out.UnprocessedItems[table]))
+			}
+			batch = out.UnprocessedItems
+		}
+	}
+	return nil
+}
+
+// DeleteTable issues a DeleteTable request. It returns once the request is
+// accepted; the table transitions through DELETING asynchronously.
+func (c *DynamoClient) DeleteTable(ctx context.Context, name string) error {
+	_, err := c.api.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: &name})
+	if err != nil {
+		return fmt.Errorf("dynamodb: delete table %q: %w", name, err)
+	}
+	return nil
+}
+
 // GetItem fetches a single item by primary key. Returns nil item if not found.
 func (c *DynamoClient) GetItem(ctx context.Context, table string, key map[string]ddbtypes.AttributeValue) (map[string]ddbtypes.AttributeValue, error) {
 	resp, err := c.api.GetItem(ctx, &dynamodb.GetItemInput{

@@ -245,7 +245,7 @@ func (s *taskListScreen) View() string     { return s.m.View() }
 func (s *taskListScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *taskListScreen) Title() string    { return "tasks" }
 func (s *taskListScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("enter", "containers")}
+	return []key.Binding{core.Hint("enter", "containers"), core.Hint("K", "stop")}
 }
 func (s *taskListScreen) IsFiltering() bool   { return s.m.IsFiltering() }
 func (s *taskListScreen) CapturesInput() bool { return s.m.IsFiltering() }
@@ -339,8 +339,17 @@ func (s *serviceDescribeScreen) View() string     { return s.m.View() }
 func (s *serviceDescribeScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *serviceDescribeScreen) Title() string    { return "describe" }
 func (s *serviceDescribeScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("e", "events"), core.Hint("r", "refresh")}
+	return []key.Binding{
+		core.Hint("e", "events"), core.Hint("S", "scale"),
+		core.Hint("F", "force-deploy"), core.Hint("U", "update-rev"),
+		core.Hint("r", "refresh"),
+	}
 }
+
+// CapturesInput / WantsEsc hold while an inline write-input field is open so it
+// owns every key and esc cancels the edit instead of popping the stack.
+func (s *serviceDescribeScreen) CapturesInput() bool { return s.m.Editing() }
+func (s *serviceDescribeScreen) WantsEsc() bool      { return s.m.Editing() }
 
 func (s *serviceDescribeScreen) OpenEvents(cfg *awsx.Config) core.Screen {
 	if cfg == nil || s.m.Name() == "" {
