@@ -4,7 +4,7 @@
 > scope, milestone status, and what's next. Doubles as the input plan for the
 > `build-with-agent-team` skill (see the Validation section).
 >
-> Last synced: 2026-06-29 — M2 metrics (PR #80) + M6 keystone #40 confirm/audit (PR #81) merged.
+> Last synced: 2026-06-30 — M6 complete: writes #32–#39/#57–#60 (PR #83) merged; M2 + #40 already in.
 
 ## Vision
 
@@ -65,11 +65,11 @@ Base list / detail / invoke / logs ship today. Open polish:
 - ✅ `--version` via ldflags (#24) · ✅ CI (#28) · ✅ release workflow (#29) · ✅ LocalStack integration CI (#31)
 - 🔲 `awsctl doctor` (#25), `--log-level` flag (#26), teatest snapshot tests (#27), release workflow follow-up (#30)
 
-### M6 — Writes, `--unsafe` (keystone landed; write actions open)
-- ✅ Confirm modal + audit log writer (#40) — gate now in place, unblocks the rest
-- 🔲 Lambda: env vars (#32), memory/timeout (#33), publish+alias (#34), delete (#35)
-- 🔲 Dynamo: Put/Update/Delete (#36), BatchWrite (#37), Create/DeleteTable (#38), PartiQL writes (#39)
-- 🔲 ECS: scale (#57), force deploy (#58), stop task (#59), update revision (#60)
+### M6 — Writes, `--unsafe` (complete)
+- ✅ Confirm modal + audit log writer (#40) — gate in place
+- ✅ Lambda: env vars (#32), memory/timeout (#33), publish+alias (#34), delete (#35)
+- ✅ Dynamo: Put/Update/Delete (#36), BatchWrite (#37), Create/DeleteTable (#38), PartiQL writes (#39)
+- ✅ ECS: scale (#57), force deploy (#58), stop task (#59), update revision (#60)
 
 ### M7 — ECS (read surface complete)
 - ✅ client wrapper (#41⚠️), mode + tab (#42), cluster list (#43⚠️), cluster describe (#44)
@@ -93,12 +93,12 @@ provenance (`--version`) and integration CI are in place.
 
 ## Next up (recommended order)
 
-1. **M6 writes** — gate landed (#40); first actions: Lambda #32–35, Dynamo #36–39, ECS #57–60.
-2. **#30 release workflow** finish → cut first tagged release (now that #24 lands).
-3. **#43 / #41 cleanup** — close the stale-open ECS tickets already delivered.
-4. **UI polish** (#21 persist profile/region, #23 pagination, #20 error modal).
+1. **#30 release workflow** finish → cut first tagged release (now that #24 lands).
+2. **#43 / #41 cleanup** — close the stale-open ECS tickets already delivered.
+3. **UI polish** (#21 persist profile/region, #23 pagination, #20 error modal).
+4. **M4 PartiQL / export** (#5 editor, #6 CSV/NDJSON) — self-contained.
 
-> M2 metrics (#64–#69) done — PR #80, pending merge.
+> M2 metrics (#64–#69, PR #80) and all of M6 (#40 + writes #32–#39/#57–#60, PRs #81/#83) merged.
 
 ## Validation (per layer)
 
