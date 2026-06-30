@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // taskItem adapts a TaskSummary to bubbles/list.Item.
@@ -61,6 +62,7 @@ type TaskListModel struct {
 	loading bool
 	loaded  bool
 	err     string
+	notice  string // success line shown after a confirmed mutation
 	width   int
 	height  int
 }
@@ -134,6 +136,19 @@ func (m TaskListModel) Update(msg tea.Msg) (TaskListModel, tea.Cmd) {
 		cmd := m.list.SetItems(items)
 		return m, cmd
 
+	case ecsWriteDoneMsg:
+		// Tasks are stopped from this screen; refresh on success.
+		if msg.action != actionStopTask {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.notice = ""
+			return m, nil
+		}
+		m.notice = noticeFor(msg.action, msg.target)
+		return m, m.Refresh()
+
 	case spinner.TickMsg:
 		if !m.loading {
 			return m, nil
@@ -143,8 +158,23 @@ func (m TaskListModel) Update(msg tea.Msg) (TaskListModel, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
-		if msg.String() == "r" && !m.list.SettingFilter() {
+		if m.list.SettingFilter() {
+			break
+		}
+		switch msg.String() {
+		case "r":
 			return m, m.Refresh()
+		case "K": // stop task (#59)
+			id := m.Selected()
+			if id == "" {
+				return m, nil
+			}
+			run := stopTaskCmd(m.client, m.cluster, id, "stopped via awsctl")
+			return m, core.ConfirmRequest(
+				"Stop task",
+				"Stop task "+id+"?",
+				actionStopTask, id, run,
+			)
 		}
 	}
 	var cmd tea.Cmd
@@ -162,6 +192,9 @@ func (m TaskListModel) View() string {
 	}
 	if m.loaded && len(m.list.Items()) == 0 {
 		return faint("no tasks for this service.\npress r to refresh")
+	}
+	if m.notice != "" {
+		return noticeStyle.Render("✓ "+m.notice) + "\n" + m.list.View()
 	}
 	return m.list.View()
 }

@@ -157,8 +157,9 @@ func (m ListModel) View() string {
 }
 
 var (
-	errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
-	faintSty = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	faintSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	noticeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 )
 
 func faint(s string) string { return faintSty.Render(s) }
