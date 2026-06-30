@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // tableItem adapts a table name to bubbles/list.Item.
@@ -117,6 +118,14 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 		cmd := m.list.SetItems(items)
 		return m, cmd
 
+	case writeDoneMsg:
+		// A table create/drop completed somewhere in this stack — refresh the
+		// list so the change is visible. Item-level writes are not our concern.
+		if msg.err == nil && (msg.action == actCreateTable || msg.action == actDeleteTable) {
+			return m, m.Refresh()
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if !m.loading {
 			return m, nil
@@ -126,8 +135,27 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
-		if msg.String() == "r" && !m.list.SettingFilter() {
-			return m, m.Refresh()
+		if !m.list.SettingFilter() {
+			switch msg.String() {
+			case "r":
+				return m, m.Refresh()
+			case "C":
+				// Create table — push the form (input-requiring).
+				if m.client != nil {
+					return m, core.Push(newCreateTableScreen(m.client))
+				}
+				return m, nil
+			case "X":
+				// Drop the highlighted table — no input, just confirm.
+				if name := m.Selected(); name != "" && m.client != nil {
+					return m, core.ConfirmRequest(
+						"Delete table",
+						"Permanently delete table "+name+" and all its items?",
+						actDeleteTable, name, deleteTableCmd(m.client, name),
+					)
+				}
+				return m, nil
+			}
 		}
 	}
 	var cmd tea.Cmd

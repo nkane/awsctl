@@ -14,6 +14,7 @@ import (
 
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // describeLoadedMsg carries the result of DescribeTable.
@@ -45,6 +46,7 @@ type DescribeModel struct {
 	spinner spinner.Model
 	loading bool
 	err     string
+	flash   string // transient write status (e.g. "table deleting…")
 	width   int
 	height  int
 	section int // 0 = info, 1 = metrics
@@ -138,6 +140,16 @@ func (m DescribeModel) Update(msg tea.Msg) (DescribeModel, tea.Cmd) {
 	case metricsLoadedMsg:
 		return m, m.metrics.Update(msg)
 
+	case writeDoneMsg:
+		if msg.action == actDeleteTable && msg.target == m.name {
+			if msg.err != nil {
+				m.err = msg.err.Error()
+			} else {
+				m.flash = "table deleting — esc back to the list"
+			}
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmds []tea.Cmd
 		if m.loading {
@@ -170,6 +182,16 @@ func (m DescribeModel) Update(msg tea.Msg) (DescribeModel, tea.Cmd) {
 			m.loading = true
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, LoadDescribeCmd(m.client, m.name))
+		case "X":
+			// Drop this table — no input, just confirm.
+			if m.name != "" && m.client != nil {
+				return m, core.ConfirmRequest(
+					"Delete table",
+					"Permanently delete table "+m.name+" and all its items?",
+					actDeleteTable, m.name, deleteTableCmd(m.client, m.name),
+				)
+			}
+			return m, nil
 		}
 	}
 
@@ -195,7 +217,10 @@ func (m DescribeModel) View() string {
 		}
 	}
 
-	footer := faint("tab section · r refresh · esc back")
+	footer := faint("tab section · r refresh · s scan · Q query · X drop table · esc back")
+	if m.flash != "" {
+		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(m.flash) + "    " + footer
+	}
 	return title + "\n" + m.sectionStrip() + "\n" + body + "\n" + footer
 }
 
