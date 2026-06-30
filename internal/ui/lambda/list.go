@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	awsx "github.com/nkane/awsctl/internal/aws"
+	"github.com/nkane/awsctl/internal/ui/core"
 )
 
 // fnItem adapts a FunctionSummary to bubbles/list.Item.
@@ -124,6 +125,15 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 		cmd := m.list.SetItems(items)
 		return m, cmd
 
+	case deleteDoneMsg:
+		// A gated delete completed (#35). Refresh the list on success so the
+		// removed function disappears; surface the error otherwise.
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		return m, m.Refresh()
+
 	case spinner.TickMsg:
 		if !m.loading {
 			return m, nil
@@ -136,6 +146,17 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 		// 'r' refreshes regardless of filter focus state.
 		if msg.String() == "r" && !m.list.SettingFilter() {
 			return m, m.Refresh()
+		}
+		// 'D' deletes the highlighted function, gated behind the confirm modal
+		// (#35). Suppressed while the filter input owns keys.
+		if msg.String() == "D" && !m.list.SettingFilter() {
+			sel := m.Selected()
+			if sel.Name == "" {
+				return m, nil
+			}
+			body := "Permanently delete " + sel.Name + "? This removes all versions and aliases."
+			return m, core.ConfirmRequest("Delete function", body,
+				"lambda.delete", sel.Name, deleteFunctionCmd(m.client, sel.Name))
 		}
 	}
 	var cmd tea.Cmd

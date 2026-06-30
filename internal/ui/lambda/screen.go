@@ -53,7 +53,10 @@ func (s *listScreen) View() string     { return s.m.View() }
 func (s *listScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *listScreen) Title() string    { return "functions" }
 func (s *listScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("enter", "detail"), core.Hint("i", "invoke"), core.Hint("l", "logs")}
+	return []key.Binding{
+		core.Hint("enter", "detail"), core.Hint("i", "invoke"),
+		core.Hint("l", "logs"), core.Hint("D", "delete"),
+	}
 }
 func (s *listScreen) SetClient(c *awsx.LambdaClient) { s.m.SetClient(c) }
 func (s *listScreen) Refresh() tea.Cmd               { return s.m.Refresh() }
@@ -94,7 +97,10 @@ func (s *detailScreen) View() string     { return s.m.View() }
 func (s *detailScreen) SetSize(w, h int) { s.m.SetSize(w, h) }
 func (s *detailScreen) Title() string    { return "detail" }
 func (s *detailScreen) KeyHints() []key.Binding {
-	return []key.Binding{core.Hint("i", "invoke"), core.Hint("l", "logs")}
+	return []key.Binding{
+		core.Hint("i", "invoke"), core.Hint("l", "logs"),
+		core.Hint("E", "edit env"), core.Hint("M", "edit config"), core.Hint("P", "publish"),
+	}
 }
 
 func (s *detailScreen) OpenInvoke(cfg *awsx.Config) core.Screen {

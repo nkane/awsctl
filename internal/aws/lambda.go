@@ -202,6 +202,88 @@ func (c *LambdaClient) Invoke(ctx context.Context, name string, payload []byte) 
 	return r, nil
 }
 
+// UpdateFunctionEnv replaces the function's environment variables with env.
+// Passing an empty map clears all variables. (#32)
+func (c *LambdaClient) UpdateFunctionEnv(ctx context.Context, name string, env map[string]string) error {
+	if env == nil {
+		env = map[string]string{}
+	}
+	_, err := c.api.UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
+		FunctionName: &name,
+		Environment:  &types.Environment{Variables: env},
+	})
+	if err != nil {
+		return fmt.Errorf("lambda: update env for %q: %w", name, err)
+	}
+	return nil
+}
+
+// UpdateFunctionConfig updates the function's memory (MB) and timeout (s). (#33)
+func (c *LambdaClient) UpdateFunctionConfig(ctx context.Context, name string, memoryMB, timeoutSec int32) error {
+	_, err := c.api.UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
+		FunctionName: &name,
+		MemorySize:   &memoryMB,
+		Timeout:      &timeoutSec,
+	})
+	if err != nil {
+		return fmt.Errorf("lambda: update config for %q: %w", name, err)
+	}
+	return nil
+}
+
+// PublishVersion publishes a new immutable version of the function and returns
+// the assigned version number. description is optional ("" omits it). (#34)
+func (c *LambdaClient) PublishVersion(ctx context.Context, name, description string) (string, error) {
+	in := &lambda.PublishVersionInput{FunctionName: &name}
+	if description != "" {
+		in.Description = &description
+	}
+	out, err := c.api.PublishVersion(ctx, in)
+	if err != nil {
+		return "", fmt.Errorf("lambda: publish version of %q: %w", name, err)
+	}
+	if out == nil || out.Version == nil {
+		return "", nil
+	}
+	return *out.Version, nil
+}
+
+// CreateOrUpdateAlias points alias at version, creating the alias if it does
+// not yet exist and updating it otherwise. (#34)
+func (c *LambdaClient) CreateOrUpdateAlias(ctx context.Context, name, alias, version string) error {
+	_, err := c.api.GetAlias(ctx, &lambda.GetAliasInput{FunctionName: &name, Name: &alias})
+	if err != nil {
+		if !isNotFound(err) {
+			return fmt.Errorf("lambda: get alias %q on %q: %w", alias, name, err)
+		}
+		if _, cerr := c.api.CreateAlias(ctx, &lambda.CreateAliasInput{
+			FunctionName:    &name,
+			Name:            &alias,
+			FunctionVersion: &version,
+		}); cerr != nil {
+			return fmt.Errorf("lambda: create alias %q on %q: %w", alias, name, cerr)
+		}
+		return nil
+	}
+	if _, uerr := c.api.UpdateAlias(ctx, &lambda.UpdateAliasInput{
+		FunctionName:    &name,
+		Name:            &alias,
+		FunctionVersion: &version,
+	}); uerr != nil {
+		return fmt.Errorf("lambda: update alias %q on %q: %w", alias, name, uerr)
+	}
+	return nil
+}
+
+// DeleteFunction permanently deletes the function (all versions and aliases). (#35)
+func (c *LambdaClient) DeleteFunction(ctx context.Context, name string) error {
+	_, err := c.api.DeleteFunction(ctx, &lambda.DeleteFunctionInput{FunctionName: &name})
+	if err != nil {
+		return fmt.Errorf("lambda: delete function %q: %w", name, err)
+	}
+	return nil
+}
+
 func summarize(fn types.FunctionConfiguration) FunctionSummary {
 	s := FunctionSummary{}
 	if fn.FunctionName != nil {
